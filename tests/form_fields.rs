@@ -34,3 +34,136 @@ fn discovers_all_form_fields_with_exact_types() {
         assert_eq!(field.locations[0].page, 1);
     }
 }
+
+
+#[test]
+fn extracts_date_format_for_date_fields() {
+    let template8 = fs::read("reference/template_8field.pdf").expect("template_8field");
+    let fields8 = get_form_fields(&template8).expect("fields");
+
+    let date_field8 = fields8
+        .iter()
+        .find(|f| f.name == "Date Field0")
+        .expect("Date Field0");
+    assert_eq!(date_field8.field_type, FormFieldType::Date);
+    assert_eq!(date_field8.date_format.as_deref(), Some("m/d/yy"));
+
+    // Other non-date fields should not have a date_format
+    let text_field = fields8
+        .iter()
+        .find(|f| f.name == "Text Field0")
+        .expect("Text Field0");
+    assert_eq!(text_field.date_format, None);
+
+    let template_ref = fs::read("reference/template.pdf").expect("template");
+    let fields_ref = get_form_fields(&template_ref).expect("fields");
+    let date_field_ref = fields_ref
+        .iter()
+        .find(|f| f.name == "date")
+        .expect("date");
+    assert_eq!(date_field_ref.field_type, FormFieldType::Date);
+    assert_eq!(date_field_ref.date_format.as_deref(), Some("dd/mm/yyyy"));
+
+    // Verify JSON serialization includes date_format
+    let json = serde_json::to_string(&fields8).expect("json");
+    assert!(json.contains(r#""date_format":"m/d/yy""#));
+}
+
+#[test]
+fn extracts_image_field_value_when_filled() {
+    use base64::Engine;
+
+    let template = fs::read("reference/template_8field.pdf").expect("template");
+    let fields_before = get_form_fields(&template).expect("fields");
+    let image_field_before = fields_before
+        .iter()
+        .find(|f| f.name == "Image Field0")
+        .expect("Image Field0");
+    assert_eq!(image_field_before.field_type, FormFieldType::Image);
+    assert_eq!(image_field_before.value, None);
+
+    // Read a test JPEG image
+    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
+    let data_url = format!("data:image/jpeg;base64,{}", b64);
+
+    let fill_json = serde_json::json!({
+        "Image Field0": data_url
+    })
+    .to_string();
+
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_json).expect("fill");
+    assert_eq!(report.filled_count(), 1);
+
+    let fields_after = get_form_fields(&filled_bytes).expect("fields");
+    let image_field_after = fields_after
+        .iter()
+        .find(|f| f.name == "Image Field0")
+        .expect("Image Field0");
+    assert_eq!(image_field_after.field_type, FormFieldType::Image);
+    assert!(image_field_after.value.is_some());
+    let val_str = image_field_after.value.as_ref().unwrap().as_str().unwrap();
+    assert!(val_str.starts_with("data:image/jpeg;base64,"));
+
+    // Verify fixed-image.pdf appearance extraction
+    let fixed_bytes = fs::read("output/fixed-image.pdf").expect("fixed-image");
+    let fixed_fields = get_form_fields(&fixed_bytes).expect("fields");
+    let avatar_field = fixed_fields
+        .iter()
+        .find(|f| f.name == "avatar")
+        .expect("avatar");
+    assert_eq!(avatar_field.field_type, FormFieldType::Image);
+    assert!(avatar_field.value.is_some());
+    let avatar_val = avatar_field.value.as_ref().unwrap().as_str().unwrap();
+    assert!(avatar_val.starts_with("data:image/jpeg;base64,"));
+}
+
+#[test]
+fn extracts_signature_info_and_image_from_signed_pdf() {
+    let bytes = fs::read("reference/template_signed.pdf").expect("read template_signed.pdf");
+    let fields = pdffiller_core::get_form_fields(&bytes).expect("get_form_fields");
+
+    let sig_field = fields
+        .iter()
+        .find(|f| f.field_type == FormFieldType::Signature)
+        .expect("Signature field not found");
+
+    assert_eq!(sig_field.name, "Signature_0");
+    assert_eq!(sig_field.signed, Some(true));
+
+    // Verify visual image
+    assert!(sig_field.value.is_some());
+    let value_str = sig_field.value.as_ref().unwrap().as_str().unwrap();
+    assert!(
+        value_str.starts_with("data:image/jpeg;base64,"),
+        "Expected value to contain JPEG data URL"
+    );
+
+    // Verify signature info struct
+    let sig_info = sig_field.signature.as_ref().expect("SignatureInfo should be present");
+    assert_eq!(
+        sig_info.reason.as_deref(),
+        Some("I am the author of this document")
+    );
+    assert_eq!(sig_info.filter.as_deref(), Some("Adobe.PPKLite"));
+    assert_eq!(sig_info.sub_filter.as_deref(), Some("adbe.pkcs7.detached"));
+    assert_eq!(
+        sig_info.signing_time.as_deref(),
+        Some("D:20261008162001+07'00'")
+    );
+    assert!(sig_info.image.is_some());
+    assert!(sig_info.image.as_ref().unwrap().starts_with("data:image/jpeg;base64,"));
+
+    // Verify certificate info
+    assert_eq!(
+        sig_info.signer_name.as_deref(),
+        Some("e8f4f4a3-fcad-44aa-af38-715f6ae7f8af")
+    );
+    assert_eq!(
+        sig_info.issuer.as_deref(),
+        Some("e8f4f4a3-fcad-44aa-af38-715f6ae7f8af")
+    );
+    assert!(sig_info.not_before.is_some());
+    assert!(sig_info.not_after.is_some());
+    assert!(sig_info.serial_number.is_some());
+}

@@ -4,3 +4,4 @@
 *.pyc
 /tmp_*
 /0
+/wasm_pkg

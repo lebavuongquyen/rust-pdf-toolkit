@@ -456,6 +456,11 @@ fn set_image(
     if rendered == 0 {
         return Err("Image field has no renderable widget".into());
     }
+
+    if let Ok(field_mut) = doc.get_object_mut(field_id).and_then(|x| x.as_dict_mut()) {
+        field_mut.set("V", pdf_text(encoded));
+    }
+
     Ok(())
 }
 
@@ -543,6 +548,40 @@ pub struct FormFieldOption {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureInfo {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub contact_info: Option<String>,
+    #[serde(default)]
+    pub signing_time: Option<String>,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub sub_filter: Option<String>,
+    #[serde(default)]
+    pub byte_range: Option<Vec<i64>>,
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub signer_name: Option<String>,
+    #[serde(default)]
+    pub signer_organization: Option<String>,
+    #[serde(default)]
+    pub issuer: Option<String>,
+    #[serde(default)]
+    pub not_before: Option<String>,
+    #[serde(default)]
+    pub not_after: Option<String>,
+    #[serde(default)]
+    pub serial_number: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormField {
     pub id: String,
     pub name: String,
@@ -560,14 +599,18 @@ pub struct FormField {
     pub flags: u32,
     pub locations: Vec<FieldLocation>,
     pub signed: Option<bool>,
+    #[serde(default, alias = "format")]
+    pub date_format: Option<String>,
+    #[serde(default)]
+    pub signature: Option<SignatureInfo>,
 }
 
-fn field_type_name(doc: &Document, field: &Dictionary, ft: &[u8]) -> FormFieldType {
+fn field_type_name(doc: &Document, field_id: ObjectId, field: &Dictionary, ft: &[u8]) -> FormFieldType {
     match ft {
         b"Sig" => FormFieldType::Signature,
         b"Btn" => {
             let flags = field_flags(field) as u32;
-            if field_has_image_appearance(field) {
+            if field_has_image_appearance(doc, field_id, field) {
                 FormFieldType::Image
             } else if flags & (1 << 16) != 0 {
                 FormFieldType::Button
@@ -588,7 +631,7 @@ fn field_type_name(doc: &Document, field: &Dictionary, ft: &[u8]) -> FormFieldTy
         b"Tx" => {
             if field.get(b"DataPrep").is_ok() {
                 FormFieldType::Barcode
-            } else if field_has_date_javascript(doc, field) {
+            } else if field_has_date_javascript(doc, field_id, field) {
                 FormFieldType::Date
             } else {
                 FormFieldType::Text
@@ -598,16 +641,175 @@ fn field_type_name(doc: &Document, field: &Dictionary, ft: &[u8]) -> FormFieldTy
     }
 }
 
-fn field_has_image_appearance(field: &Dictionary) -> bool {
-    let Ok(Object::Dictionary(mk)) = field.get(b"MK") else {
-        return false;
+fn get_dict_from_object<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
+    match obj {
+        Object::Dictionary(d) => Some(d),
+        Object::Reference(id) => doc.get_object(*id).ok().and_then(|x| x.as_dict().ok()),
+        _ => None,
+    }
+}
+
+fn field_has_image_appearance(doc: &Document, field_id: ObjectId, field: &Dictionary) -> bool {
+    let check_dict = |d: &Dictionary| -> bool {
+        if let Ok(Object::Dictionary(mk)) = d.get(b"MK") {
+            if mk.get(b"I").is_ok() || mk.get(b"IF").is_ok() {
+                return true;
+            }
+        }
+        false
     };
-    mk.get(b"I").is_ok()
+
+    if check_dict(field) {
+        return true;
+    }
+
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if check_dict(widget) {
+                return true;
+            }
+        }
+    }
+
+    find_field_image_stream(doc, field_id, field).is_some()
+}
+
+fn find_image_stream_in_object<'a>(doc: &'a Document, obj: &'a Object, depth: usize) -> Option<&'a Stream> {
+    if depth > 5 {
+        return None;
+    }
+    match obj {
+        Object::Reference(id) => {
+            let target = doc.get_object(*id).ok()?;
+            find_image_stream_in_object(doc, target, depth + 1)
+        }
+        Object::Stream(stream) => {
+            let subtype = stream.dict.get(b"Subtype").ok().and_then(|x| x.as_name().ok());
+            if subtype == Some(b"Image") {
+                if !stream.content.is_empty() {
+                    return Some(stream);
+                }
+            } else if subtype == Some(b"Form") {
+                if let Ok(res_obj) = stream.dict.get(b"Resources") {
+                    if let Some(res) = get_dict_from_object(doc, res_obj) {
+                        if let Ok(xobjs_obj) = res.get(b"XObject") {
+                            if let Some(xobjs) = get_dict_from_object(doc, xobjs_obj) {
+                                for (_name, xobj_val) in xobjs.iter() {
+                                    if let Some(found) = find_image_stream_in_object(doc, xobj_val, depth + 1) {
+                                        return Some(found);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+        Object::Dictionary(dict) => {
+            for (key, val) in dict.iter() {
+                if key != b"Off" {
+                    if let Some(found) = find_image_stream_in_object(doc, val, depth + 1) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn find_image_stream_in_ap<'a>(doc: &'a Document, ap_obj: &'a Object) -> Option<&'a Stream> {
+    let ap_dict = match ap_obj {
+        Object::Dictionary(d) => d,
+        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok()?,
+        _ => return None,
+    };
+    if let Ok(n_obj) = ap_dict.get(b"N") {
+        find_image_stream_in_object(doc, n_obj, 0)
+    } else {
+        None
+    }
+}
+
+fn find_image_stream_in_mk<'a>(doc: &'a Document, mk_obj: &'a Object) -> Option<&'a Stream> {
+    let mk_dict = match mk_obj {
+        Object::Dictionary(d) => d,
+        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok()?,
+        _ => return None,
+    };
+    if let Ok(i_obj) = mk_dict.get(b"I") {
+        find_image_stream_in_object(doc, i_obj, 0)
+    } else {
+        None
+    }
+}
+
+fn find_field_image_stream<'a>(doc: &'a Document, field_id: ObjectId, field: &'a Dictionary) -> Option<&'a Stream> {
+    if let Ok(ap) = field.get(b"AP") {
+        if let Some(found) = find_image_stream_in_ap(doc, ap) {
+            return Some(found);
+        }
+    }
+    if let Ok(mk) = field.get(b"MK") {
+        if let Some(found) = find_image_stream_in_mk(doc, mk) {
+            return Some(found);
+        }
+    }
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if let Ok(ap) = widget.get(b"AP") {
+                if let Some(found) = find_image_stream_in_ap(doc, ap) {
+                    return Some(found);
+                }
+            }
+            if let Ok(mk) = widget.get(b"MK") {
+                if let Some(found) = find_image_stream_in_mk(doc, mk) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_image_value(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Option<Value> {
+    if let Some(val) = field_value(field, b"V") {
+        if let Some(s) = val.as_str() {
+            if !s.is_empty() {
+                if s.starts_with("data:image/") {
+                    return Some(Value::String(s.to_string()));
+                } else if s.len() > 20 && base64::engine::general_purpose::STANDARD.decode(s).is_ok() {
+                    return Some(Value::String(format!("data:image/jpeg;base64,{}", s)));
+                }
+            }
+        }
+    }
+
+    let stream = find_field_image_stream(doc, field_id, field)?;
+    let filter = stream.dict.get(b"Filter").ok().and_then(|x| x.as_name().ok());
+    let mime = if stream.content.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if stream.content.starts_with(&[0xff, 0xd8]) || filter == Some(b"DCTDecode") {
+        "image/jpeg"
+    } else if filter == Some(b"JPXDecode") {
+        "image/jp2"
+    } else {
+        "image/jpeg"
+    };
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&stream.content);
+    Some(Value::String(format!("data:{};base64,{}", mime, b64)))
 }
 
 fn javascript_text(doc: &Document, object: &Object) -> Option<String> {
     match object {
         Object::String(_, _) => object_text(object),
+        Object::Stream(stream) => {
+            let bytes = stream.decompressed_content().unwrap_or_else(|_| stream.content.clone());
+            String::from_utf8(bytes).ok()
+        }
         Object::Reference(id) => {
             let object = doc.get_object(*id).ok()?;
             javascript_text(doc, object)
@@ -622,19 +824,147 @@ fn javascript_text(doc: &Document, object: &Object) -> Option<String> {
     }
 }
 
-fn field_has_date_javascript(doc: &Document, field: &Dictionary) -> bool {
-    let Ok(Object::Reference(aa_id)) = field.get(b"AA") else {
-        return false;
-    };
-    let Ok(aa) = doc.get_object(*aa_id).and_then(|x| x.as_dict()) else {
-        return false;
-    };
-    for key in [b"K".as_slice(), b"F".as_slice(), b"V".as_slice(), b"C".as_slice()] {
+fn acrobat_standard_date_format(index: usize) -> Option<&'static str> {
+    match index {
+        0 => Some("m/d"),
+        1 => Some("m/d/yy"),
+        2 => Some("mm/dd/yy"),
+        3 => Some("mm/yy"),
+        4 => Some("d-mmm"),
+        5 => Some("d-mmm-yy"),
+        6 => Some("dd-mmm-yy"),
+        7 => Some("yy-mm-dd"),
+        8 => Some("mmm-yy"),
+        9 => Some("mmmm-yy"),
+        10 => Some("mmm d, yyyy"),
+        11 => Some("mmmm d, yyyy"),
+        12 => Some("m/d/yy h:MM tt"),
+        13 => Some("m/d/yy HH:MM"),
+        _ => None,
+    }
+}
+
+fn extract_quoted_arg(text: &str) -> Option<String> {
+    let open = text.find('(')?;
+    let inside = text[open + 1..].trim_start();
+    let quote = inside.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let content = &inside[quote.len_utf8()..];
+    let mut escaped = false;
+    let mut end_idx = None;
+    for (idx, ch) in content.char_indices() {
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == quote {
+            end_idx = Some(idx);
+            break;
+        }
+    }
+    let end = end_idx?;
+    let res = &content[..end];
+    if res.is_empty() {
+        None
+    } else {
+        Some(res.replace("\\\"", "\"").replace("\\'", "'"))
+    }
+}
+
+fn parse_date_format_from_js(js: &str) -> Option<String> {
+    for prefix in ["AFDate_FormatEx", "AFDate_KeystrokeEx", "util.printd"] {
+        if let Some(pos) = js.find(prefix) {
+            let rest = &js[pos + prefix.len()..];
+            if let Some(fmt) = extract_quoted_arg(rest) {
+                return Some(fmt);
+            }
+        }
+    }
+
+    for prefix in ["AFDate_Format", "AFDate_Keystroke"] {
+        if let Some(pos) = js.find(prefix) {
+            let rest = &js[pos + prefix.len()..];
+            if let Some(open) = rest.find('(') {
+                let inside = rest[open + 1..].trim_start();
+                let num_str: String = inside.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(idx) = num_str.parse::<usize>() {
+                    if let Some(fmt) = acrobat_standard_date_format(idx) {
+                        return Some(fmt.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn date_format_from_aa(doc: &Document, aa: &Dictionary) -> Option<String> {
+    for key in [b"F".as_slice(), b"K".as_slice(), b"V".as_slice(), b"C".as_slice()] {
         if let Ok(action) = aa.get(key) {
             if let Some(js) = javascript_text(doc, action) {
-                if js.contains("AFDate_") {
-                    return true;
+                if let Some(fmt) = parse_date_format_from_js(&js) {
+                    return Some(fmt);
                 }
+            }
+        }
+    }
+    None
+}
+
+fn field_date_format(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Option<String> {
+    if let Ok(aa_obj) = field.get(b"AA") {
+        if let Some(aa) = get_dict_from_object(doc, aa_obj) {
+            if let Some(fmt) = date_format_from_aa(doc, aa) {
+                return Some(fmt);
+            }
+        }
+    }
+
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if let Ok(aa_obj) = widget.get(b"AA") {
+                if let Some(aa) = get_dict_from_object(doc, aa_obj) {
+                    if let Some(fmt) = date_format_from_aa(doc, aa) {
+                        return Some(fmt);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn field_has_date_javascript(doc: &Document, field_id: ObjectId, field: &Dictionary) -> bool {
+    if field_date_format(doc, field_id, field).is_some() {
+        return true;
+    }
+    let check_dict = |d: &Dictionary| -> bool {
+        if let Ok(aa_obj) = d.get(b"AA") {
+            if let Some(aa) = get_dict_from_object(doc, aa_obj) {
+                for key in [b"K".as_slice(), b"F".as_slice(), b"V".as_slice(), b"C".as_slice()] {
+                    if let Ok(action) = aa.get(key) {
+                        if let Some(js) = javascript_text(doc, action) {
+                            if js.contains("AFDate_") || js.contains("util.printd") {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    };
+    if check_dict(field) {
+        return true;
+    }
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if check_dict(widget) {
+                return true;
             }
         }
     }
@@ -725,6 +1055,150 @@ fn field_locations(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Ve
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_certificate_info(
+    contents: &[u8],
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    for i in 0..contents.len().saturating_sub(4) {
+        if contents[i] == 0x30 && (contents[i + 1] == 0x82 || contents[i + 1] == 0x81) {
+            if let Ok((_, cert)) = x509_parser::parse_x509_certificate(&contents[i..]) {
+                let signer_name = cert
+                    .subject()
+                    .iter_common_name()
+                    .next()
+                    .and_then(|cn| cn.as_str().ok())
+                    .map(|s| s.to_string())
+                    .or_else(|| Some(cert.subject().to_string()));
+                let signer_org = cert
+                    .subject()
+                    .iter_organization()
+                    .next()
+                    .and_then(|o| o.as_str().ok())
+                    .map(|s| s.to_string());
+                let issuer = cert
+                    .issuer()
+                    .iter_common_name()
+                    .next()
+                    .and_then(|cn| cn.as_str().ok())
+                    .map(|s| s.to_string())
+                    .or_else(|| Some(cert.issuer().to_string()));
+                let not_before = Some(cert.validity().not_before.to_string());
+                let not_after = Some(cert.validity().not_after.to_string());
+                let serial = Some(cert.raw_serial_as_string());
+                return (signer_name, signer_org, issuer, not_before, not_after, serial);
+            }
+        }
+    }
+    (None, None, None, None, None, None)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn extract_certificate_info(
+    _contents: &[u8],
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    (None, None, None, None, None, None)
+}
+
+fn get_signature_dict<'a>(
+    doc: &'a Document,
+    field_id: ObjectId,
+    field: &'a Dictionary,
+) -> Option<&'a Dictionary> {
+    if let Ok(v_obj) = field.get(b"V") {
+        if let Some(d) = get_dict_from_object(doc, v_obj) {
+            return Some(d);
+        }
+    }
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if let Ok(v_obj) = widget.get(b"V") {
+                if let Some(d) = get_dict_from_object(doc, v_obj) {
+                    return Some(d);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_signature_info(
+    doc: &Document,
+    field_id: ObjectId,
+    field: &Dictionary,
+) -> Option<SignatureInfo> {
+    let sig_dict = get_signature_dict(doc, field_id, field);
+    let image = extract_image_value(doc, field_id, field).and_then(|v| match v {
+        Value::String(s) => Some(s),
+        _ => None,
+    });
+
+    if sig_dict.is_none() && image.is_none() {
+        return None;
+    }
+
+    let name = sig_dict.and_then(|d| d.get(b"Name").ok()).and_then(object_text);
+    let reason = sig_dict.and_then(|d| d.get(b"Reason").ok()).and_then(object_text);
+    let location = sig_dict.and_then(|d| d.get(b"Location").ok()).and_then(object_text);
+    let contact_info = sig_dict
+        .and_then(|d| d.get(b"ContactInfo").ok())
+        .and_then(object_text);
+    let signing_time = sig_dict.and_then(|d| d.get(b"M").ok()).and_then(object_text);
+    let filter = sig_dict
+        .and_then(|d| d.get(b"Filter").ok())
+        .and_then(|x| x.as_name().ok())
+        .map(|n| String::from_utf8_lossy(n).into_owned());
+    let sub_filter = sig_dict
+        .and_then(|d| d.get(b"SubFilter").ok())
+        .and_then(|x| x.as_name().ok())
+        .map(|n| String::from_utf8_lossy(n).into_owned());
+    let byte_range = sig_dict
+        .and_then(|d| d.get(b"ByteRange").ok())
+        .and_then(|x| x.as_array().ok())
+        .map(|arr| arr.iter().filter_map(|item| item.as_i64().ok()).collect());
+
+    let (signer_name, signer_organization, issuer, not_before, not_after, serial_number) =
+        if let Some(contents) = sig_dict
+            .and_then(|d| d.get(b"Contents").ok())
+            .and_then(|x| x.as_str().ok())
+        {
+            extract_certificate_info(contents)
+        } else {
+            (None, None, None, None, None, None)
+        };
+
+    Some(SignatureInfo {
+        name,
+        reason,
+        location,
+        contact_info,
+        signing_time,
+        filter,
+        sub_filter,
+        byte_range,
+        image,
+        signer_name,
+        signer_organization,
+        issuer,
+        not_before,
+        not_after,
+        serial_number,
+    })
+}
+
 struct FieldDefinition {
     id: ObjectId,
     name: String,
@@ -770,13 +1244,36 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
             let flags = field_flags(&definition.field) as u32;
             let read_only = flags & 1 != 0;
             let first = locations.first();
+            let field_type = field_type_name(doc, definition.id, &definition.field, &definition.field_type);
+            let is_image_field = field_type == FormFieldType::Image;
+            let is_signature_field = field_type == FormFieldType::Signature;
+            let signature = if is_signature_field {
+                extract_signature_info(doc, definition.id, &definition.field)
+            } else {
+                None
+            };
+            let value = if is_image_field {
+                extract_image_value(doc, definition.id, &definition.field)
+                    .or_else(|| field_value(&definition.field, b"V"))
+            } else if is_signature_field {
+                signature
+                    .as_ref()
+                    .and_then(|s| s.image.clone().map(Value::String).or_else(|| s.name.clone().map(Value::String)))
+            } else {
+                field_value(&definition.field, b"V")
+            };
+            let date_format = if field_type == FormFieldType::Date {
+                field_date_format(doc, definition.id, &definition.field)
+            } else {
+                None
+            };
             FormField {
                 id: object_id_string(definition.id),
                 name: definition.name.clone(),
-                field_type: field_type_name(doc, &definition.field, &definition.field_type),
+                field_type,
                 page: first.map(|x| x.page),
                 rect: first.map(|x| x.rect),
-                value: field_value(&definition.field, b"V"),
+                value,
                 default_value: field_value(&definition.field, b"DV"),
                 required: flags & (1 << 1) != 0,
                 read_only,
@@ -811,10 +1308,12 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
                 flags,
                 locations,
                 signed: if definition.field_type == b"Sig" {
-                    Some(definition.field.get(b"V").is_ok())
+                    Some(signature.is_some() || definition.field.get(b"V").is_ok())
                 } else {
                     None
                 },
+                date_format,
+                signature,
             }
         })
         .collect();

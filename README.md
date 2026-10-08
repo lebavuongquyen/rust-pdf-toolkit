@@ -100,20 +100,117 @@ A bad individual field does not have to abort the entire fill operation.
 
 ## Form field discovery
 
-The field discovery API returns every AcroForm field, including `/Sig` signature fields. Signature fields are metadata only here; cryptographic signing remains the responsibility of `PdfSigner`.
+The field discovery API scans every AcroForm field, resolving widget annotations, page locations, inherited attributes, exact types, and existing values. Signature fields are discovered with full cryptographic and visual appearance metadata.
 
 ~~~rust
-use pdffiller_core::get_form_fields;
+use pdffiller_core::{get_form_fields, FormFieldType};
 
 let template = std::fs::read("template.pdf")?;
 let fields = get_form_fields(&template)?;
 
 for field in fields {
-    println!("{} {:?} page={:?} rect={:?}", field.name, field.field_type, field.page, field.rect);
+    println!("{}: {:?} (value: {:?})", field.name, field.field_type, field.value);
+    
+    // Date fields include detected format pattern
+    if let Some(format) = &field.date_format {
+        println!("  Date format: {}", format);
+    }
+    
+    // Signed signature fields expose both visual appearance image and digital certificate info
+    if let Some(sig) = &field.signature {
+        println!("  Signer: {:?}", sig.signer_name);
+        println!("  Reason: {:?}", sig.reason);
+        println!("  Signing Time: {:?}", sig.signing_time);
+        println!("  Visual image present: {}", sig.image.is_some());
+    }
 }
 ~~~
 
-Each field exposes its object id, logical name, type, primary page and rectangle, all widget locations, current/default value, required/read-only flags, visibility/enabled state, tooltip, options, raw field flags, and signature status when the field is `/Sig`.
+### Field types and value formats
+
+| Field Type | Enum Variant | Description | `value` / Output |
+|---|---|---|---|
+| Text | `FormFieldType::Text` | Standard text field | String or null |
+| Date | `FormFieldType::Date` | Text field formatted with Date scripts | String or null, plus `date_format` (e.g. `"dd/mm/yyyy"`) |
+| Image | `FormFieldType::Image` | Pushbutton or widget with image appearance | Base64 Data URL (e.g. `"data:image/jpeg;base64,..."`) |
+| Checkbox | `FormFieldType::Checkbox` | Checkbox toggle | `"Yes"`, `"Off"`, or boolean string |
+| Radio | `FormFieldType::Radio` | Radio button group | Selected export value or `"Off"` |
+| Choice | `FormFieldType::ComboBox`, `ListBox` | Dropdown or list selector | String or array of strings |
+| Signature | `FormFieldType::Signature` | Digital signature /Sig field | Visual signature image Data URL (or signer name), plus structured `signature` |
+| Button | `FormFieldType::Button` | Action button | Pushbutton export state |
+| Barcode | `FormFieldType::Barcode` | 2D/Paper form barcode | Barcode raw value |
+
+### Structured `FormField` Model
+
+~~~rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormField {
+    pub id: String,                         // e.g. "340 0 R"
+    pub name: String,                       // e.g. "Signature_0"
+    pub field_type: FormFieldType,
+    pub page: Option<usize>,                // 1-indexed page
+    pub rect: Option<[f64; 4]>,             // [x1, y1, x2, y2]
+    pub value: Option<serde_json::Value>,   // Current value (or Base64 image data URL)
+    pub default_value: Option<serde_json::Value>,
+    pub required: bool,
+    pub read_only: bool,
+    pub visible: bool,
+    pub enabled: bool,
+    pub tooltip: Option<String>,
+    pub options: Vec<FormFieldOption>,
+    pub flags: u32,
+    pub locations: Vec<FieldLocation>,
+    pub signed: Option<bool>,               // Some(true) if signed, Some(false) if unsigned
+    pub date_format: Option<String>,        // e.g. "dd/mm/yyyy" or "yyyy-mm-dd"
+    pub signature: Option<SignatureInfo>,   // Detailed signature & cert metadata
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureInfo {
+    pub name: Option<String>,               // Signer name from PDF dictionary
+    pub reason: Option<String>,             // Signing reason
+    pub location: Option<String>,           // Signing location
+    pub contact_info: Option<String>,       // Contact info
+    pub signing_time: Option<String>,       // PDF timestamp, e.g. "D:20261008162001+07'00'"
+    pub filter: Option<String>,             // e.g. "Adobe.PPKLite"
+    pub sub_filter: Option<String>,         // e.g. "adbe.pkcs7.detached"
+    pub byte_range: Option<Vec<i64>>,       // [offset1, len1, offset2, len2]
+    pub image: Option<String>,              // Visual appearance Base64 Data URL
+    pub signer_name: Option<String>,        // Subject CN from X.509 certificate
+    pub signer_organization: Option<String>,// Subject O from X.509 certificate
+    pub issuer: Option<String>,             // Issuer CN from X.509 certificate
+    pub not_before: Option<String>,         // Certificate validity start
+    pub not_after: Option<String>,          // Certificate validity expiry
+    pub serial_number: Option<String>,      // Certificate serial number
+}
+~~~
+
+### Example JSON output for a signed Signature field
+
+~~~json
+{
+  "id": "340 0 R",
+  "name": "Signature_0",
+  "field_type": "Signature",
+  "page": 1,
+  "rect": [435.5, 680.2, 522.67, 719.6],
+  "value": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "signed": true,
+  "signature": {
+    "reason": "I am the author of this document",
+    "signing_time": "D:20261008162001+07'00'",
+    "filter": "Adobe.PPKLite",
+    "sub_filter": "adbe.pkcs7.detached",
+    "byte_range": [0, 52115, 54905, 4136],
+    "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+    "signer_name": "e8f4f4a3-fcad-44aa-af38-715f6ae7f8af",
+    "issuer": "e8f4f4a3-fcad-44aa-af38-715f6ae7f8af",
+    "not_before": "Apr 19 15:53:21 2026 +00:00",
+    "not_after": "Apr 20 03:53:21 2027 +00:00",
+    "serial_number": "00:be:55:a1:06:10:1c:ca:5f"
+  }
+}
+~~~
 
 The WASM API exposes the same metadata through `get_form_fields_result(template)` as JSON.
 
@@ -441,6 +538,9 @@ Signed PDF
 
 - AcroForm field discovery
 - Exact field type classification: Text, Date, Image, Checkbox, Radio, ListBox, ComboBox, Signature, Button, Barcode
+- Date format extraction for Date fields (`date_format`)
+- Image field value extraction (Base64 data URL from existing appearances)
+- Signature metadata, visual image, and X.509 certificate extraction (`signature`)
 - Buttons
 - Choice fields
 - JPEG image fields
@@ -452,6 +552,7 @@ Signed PDF
 - Separation of visual appearance and digital signing
 - Native incremental digital signing API
 - Native RSA certificate signer
+- Native ECDSA certificate signer (Foxit reference shape)
 - Signer abstraction
 - WASM filling build
 - Native signing integration test
