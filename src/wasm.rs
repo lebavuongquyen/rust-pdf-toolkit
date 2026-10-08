@@ -1,6 +1,11 @@
-use crate::{fill_pdf, report_json, validate_pdf};
+use crate::{fill_pdf, form_fields_json, report_json, validate_pdf};
 use base64::Engine;
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub fn get_form_fields_result(template: &[u8]) -> Result<String, JsValue> {
+    form_fields_json(template).map_err(|e| JsValue::from_str(&e))
+}
 
 #[wasm_bindgen]
 pub fn fill_pdf_bytes(template: &[u8], json: &str) -> Result<Vec<u8>, JsValue> {

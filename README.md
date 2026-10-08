@@ -8,6 +8,7 @@ Rust PDF form filling and digital signing library with a WASM-compatible filling
 - Fill checkbox and radio button fields (/Btn).
 - Fill choice fields (/Ch).
 - Fill JPEG image fields.
+- Discover all AcroForm fields, including signature fields, with page and widget metadata.
 - Return a structured fill report for missing, invalid, unsupported, and failed fields.
 - Validate input without modifying the PDF.
 - Render a visual signature image separately from cryptographic signing.
@@ -78,6 +79,25 @@ The fill report uses these statuses:
 - failed
 
 A bad individual field does not have to abort the entire fill operation.
+
+## Form field discovery
+
+The field discovery API returns every AcroForm field, including `/Sig` signature fields. Signature fields are metadata only here; cryptographic signing remains the responsibility of `PdfSigner`.
+
+~~~rust
+use pdffiller_core::get_form_fields;
+
+let template = std::fs::read("template.pdf")?;
+let fields = get_form_fields(&template)?;
+
+for field in fields {
+    println!("{} {:?} page={:?} rect={:?}", field.name, field.field_type, field.page, field.rect);
+}
+~~~
+
+Each field exposes its object id, logical name, type, primary page and rectangle, all widget locations, current/default value, required/read-only flags, visibility/enabled state, tooltip, options, raw field flags, and signature status when the field is `/Sig`.
+
+The WASM API exposes the same metadata through `get_form_fields_result(template)` as JSON.
 
 ## Validation
 
