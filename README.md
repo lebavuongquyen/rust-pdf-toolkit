@@ -456,21 +456,6 @@ Signed PDF
 - WASM filling build
 - Native signing integration test
 
-### Next
-
-- Native CMS verification API
-- Certificate chain support
-- PKCS#12/PFX adapter outside the core engine
-- External signer API with digest/signature metadata
-- Remote signer
-- HSM signer
-- RFC 3161 timestamping
-- PAdES B-T / B-LT / B-LTA
-- DSS / LTV
-- Multiple signature support
-- Streaming output wrappers
-- WASM external-signing bridge
-
 ## License
 
 This repository does not currently declare a project-level license. Review dependency license requirements before publishing or distributing binaries that include native signing support.
