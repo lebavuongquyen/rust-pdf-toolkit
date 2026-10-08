@@ -133,12 +133,20 @@ for field in fields {
 | Text | `FormFieldType::Text` | Standard text field | String or null |
 | Date | `FormFieldType::Date` | Text field formatted with Date scripts | String or null, plus `date_format` (e.g. `"dd/mm/yyyy"`) |
 | Image | `FormFieldType::Image` | Pushbutton or widget with image appearance | Base64 Data URL (e.g. `"data:image/jpeg;base64,..."`) |
-| Checkbox | `FormFieldType::Checkbox` | Checkbox toggle | `"Yes"`, `"Off"`, or boolean string |
+| Checkbox | `FormFieldType::Checkbox` | Checkbox toggle | Selected state (e.g. `"Yes"`), `"Off"`, or boolean string |
 | Radio | `FormFieldType::Radio` | Radio button group | Selected export value or `"Off"` |
-| Choice | `FormFieldType::ComboBox`, `ListBox` | Dropdown or list selector | String or array of strings |
+| Choice | `FormFieldType::ComboBox`, `ListBox` | Dropdown or list selector | String or array of strings (multi-select) |
 | Signature | `FormFieldType::Signature` | Digital signature /Sig field | Visual signature image Data URL (or signer name), plus structured `signature` |
 | Button | `FormFieldType::Button` | Action button | Pushbutton export state |
 | Barcode | `FormFieldType::Barcode` | 2D/Paper form barcode | Barcode raw value |
+
+### Field Value Resolution Mechanics
+
+The discovery engine resolves field values across standard PDF AcroForm structures:
+1. **Direct Field `/V`**: Value defined directly on the field dictionary.
+2. **Parent Inheritance**: If `/V` is missing on a child node, parent hierarchy dictionaries are traversed upwards.
+3. **Widget State Resolution**: For fields where values reside on individual widget annotations, widget `/V` and active appearance state `/AS` (e.g. checkbox on-state vs `"Off"`) are inspected.
+4. **Visual Appearance Streams**: For Image fields and signed Signature fields, appearance streams (`/AP` &rarr; `/N`) are traversed to locate the embedded `XObject` image stream, returning a Base64 data URL (`data:image/jpeg;base64,...`).
 
 ### Structured `FormField` Model
 
@@ -541,6 +549,7 @@ Signed PDF
 - Date format extraction for Date fields (`date_format`)
 - Image field value extraction (Base64 data URL from existing appearances)
 - Signature metadata, visual image, and X.509 certificate extraction (`signature`)
+- Robust field value extraction across all field types with parent inheritance and widget state resolution
 - Buttons
 - Choice fields
 - JPEG image fields
