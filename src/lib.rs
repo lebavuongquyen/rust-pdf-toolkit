@@ -1036,6 +1036,46 @@ fn field_value(dict: &Dictionary, key: &[u8]) -> Option<Value> {
     }
 }
 
+fn extract_resolved_field_value(
+    doc: &Document,
+    field_id: ObjectId,
+    field: &Dictionary,
+) -> Option<Value> {
+    if let Some(val) = field_value(field, b"V") {
+        return Some(val);
+    }
+    let mut current = field
+        .get(b"Parent")
+        .ok()
+        .and_then(|x| x.as_reference().ok())
+        .and_then(|id| doc.get_object(id).ok())
+        .and_then(|x| x.as_dict().ok());
+    while let Some(parent_dict) = current {
+        if let Some(val) = field_value(parent_dict, b"V") {
+            return Some(val);
+        }
+        current = parent_dict
+            .get(b"Parent")
+            .ok()
+            .and_then(|x| x.as_reference().ok())
+            .and_then(|id| doc.get_object(id).ok())
+            .and_then(|x| x.as_dict().ok());
+    }
+    for widget_id in widget_ids(doc, field_id, field) {
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
+            if let Some(val) = field_value(widget, b"V") {
+                return Some(val);
+            }
+            if let Ok(as_name) = widget.get(b"AS").and_then(|x| x.as_name()) {
+                if as_name != b"Off" {
+                    return Some(Value::String(String::from_utf8_lossy(as_name).into_owned()));
+                }
+            }
+        }
+    }
+    None
+}
+
 fn field_locations(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Vec<FieldLocation> {
     let pages = widget_page_map(doc);
     widget_ids(doc, field_id, field)
@@ -1254,13 +1294,13 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
             };
             let value = if is_image_field {
                 extract_image_value(doc, definition.id, &definition.field)
-                    .or_else(|| field_value(&definition.field, b"V"))
+                    .or_else(|| extract_resolved_field_value(doc, definition.id, &definition.field))
             } else if is_signature_field {
                 signature
                     .as_ref()
                     .and_then(|s| s.image.clone().map(Value::String).or_else(|| s.name.clone().map(Value::String)))
             } else {
-                field_value(&definition.field, b"V")
+                extract_resolved_field_value(doc, definition.id, &definition.field)
             };
             let date_format = if field_type == FormFieldType::Date {
                 field_date_format(doc, definition.id, &definition.field)

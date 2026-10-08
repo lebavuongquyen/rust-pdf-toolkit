@@ -167,3 +167,59 @@ fn extracts_signature_info_and_image_from_signed_pdf() {
     assert!(sig_info.not_after.is_some());
     assert!(sig_info.serial_number.is_some());
 }
+
+#[test]
+fn extracts_all_field_types_values_when_filled() {
+    use base64::Engine;
+
+    let template = fs::read("reference/template_8field.pdf").expect("template_8field.pdf");
+    let fields = get_form_fields(&template).expect("get_form_fields");
+
+    let combo = fields.iter().find(|f| f.name == "Combo Box0").expect("combo");
+    let combo_val = combo.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Item1".into());
+
+    let list = fields.iter().find(|f| f.name == "List Box0").expect("list");
+    let list_val = list.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Item1".into());
+
+    let radio = fields.iter().find(|f| f.name == "Radio Button0").expect("radio");
+    let radio_val = radio.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Choice1".into());
+
+    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
+    let data_url = format!("data:image/jpeg;base64,{}", b64);
+
+    let fill_data = serde_json::json!({
+        "Text Field0": "Nguyen Van A",
+        "Date Field0": "12/25/2026",
+        "Check Box0": true,
+        "Radio Button0": radio_val,
+        "Combo Box0": combo_val,
+        "List Box0": list_val,
+        "Image Field0": data_url,
+    });
+
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_data.to_string()).expect("fill");
+    assert!(report.filled_count() >= 6);
+
+    let filled_fields = get_form_fields(&filled_bytes).expect("fields after fill");
+
+    let text_f = filled_fields.iter().find(|f| f.name == "Text Field0").unwrap();
+    assert_eq!(text_f.value, Some(serde_json::Value::String("Nguyen Van A".into())));
+
+    let date_f = filled_fields.iter().find(|f| f.name == "Date Field0").unwrap();
+    assert_eq!(date_f.value, Some(serde_json::Value::String("12/25/2026".into())));
+
+    let check_f = filled_fields.iter().find(|f| f.name == "Check Box0").unwrap();
+    assert!(check_f.value.is_some());
+    assert_ne!(check_f.value.as_ref().unwrap().as_str().unwrap(), "Off");
+
+    let combo_f = filled_fields.iter().find(|f| f.name == "Combo Box0").unwrap();
+    assert_eq!(combo_f.value, Some(serde_json::Value::String(combo_val)));
+
+    let list_f = filled_fields.iter().find(|f| f.name == "List Box0").unwrap();
+    assert_eq!(list_f.value, Some(serde_json::Value::String(list_val)));
+
+    let img_f = filled_fields.iter().find(|f| f.name == "Image Field0").unwrap();
+    assert!(img_f.value.is_some());
+    assert!(img_f.value.as_ref().unwrap().as_str().unwrap().starts_with("data:image/jpeg;base64,"));
+}
