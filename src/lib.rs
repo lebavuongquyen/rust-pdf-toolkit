@@ -3,7 +3,7 @@ use lopdf::xref::XrefType;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
@@ -86,10 +86,22 @@ fn inherited_field_name(doc: &Document, dict: &Dictionary) -> Option<String> {
     let mut names = Vec::new();
     let mut current = Some(dict);
     while let Some(current_dict) = current {
-        if let Some(name) = field_name(current_dict) { names.push(name); }
-        current = current_dict.get(b"Parent").ok().and_then(|x| x.as_reference().ok()).and_then(|id| doc.get_object(id).ok()).and_then(|x| x.as_dict().ok());
+        if let Some(name) = field_name(current_dict) {
+            names.push(name);
+        }
+        current = current_dict
+            .get(b"Parent")
+            .ok()
+            .and_then(|x| x.as_reference().ok())
+            .and_then(|id| doc.get_object(id).ok())
+            .and_then(|x| x.as_dict().ok());
     }
-    if names.is_empty() { None } else { names.reverse(); Some(names.join(".")) }
+    if names.is_empty() {
+        None
+    } else {
+        names.reverse();
+        Some(names.join("."))
+    }
 }
 
 fn field_type(dict: &Dictionary) -> Option<Vec<u8>> {
@@ -502,7 +514,13 @@ fn fill_one(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FormFieldType { Text, Button, Choice, Signature, Unknown }
+pub enum FormFieldType {
+    Text,
+    Button,
+    Choice,
+    Signature,
+    Unknown,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldLocation {
@@ -553,12 +571,18 @@ fn object_id_string(id: ObjectId) -> String {
 }
 
 fn annotation_flags(dict: &Dictionary) -> u32 {
-    dict.get(b"F").ok().and_then(|x| x.as_i64().ok()).unwrap_or(0).max(0) as u32
+    dict.get(b"F")
+        .ok()
+        .and_then(|x| x.as_i64().ok())
+        .unwrap_or(0)
+        .max(0) as u32
 }
 
 fn widget_rect_values(dict: &Dictionary) -> Option<[f64; 4]> {
     let values = dict.get(b"Rect").ok()?.as_array().ok()?;
-    if values.len() != 4 { return None; }
+    if values.len() != 4 {
+        return None;
+    }
     let mut result = [0.0; 4];
     for (index, value) in values.iter().enumerate() {
         result[index] = match value {
@@ -573,8 +597,12 @@ fn widget_rect_values(dict: &Dictionary) -> Option<[f64; 4]> {
 fn widget_page_map(doc: &Document) -> HashMap<ObjectId, usize> {
     let mut result = HashMap::new();
     for (page_number, page_id) in doc.get_pages() {
-        let Ok(page) = doc.get_object(page_id).and_then(|x| x.as_dict()) else { continue };
-        let Ok(annots) = page.get(b"Annots").and_then(|x| x.as_array()) else { continue };
+        let Ok(page) = doc.get_object(page_id).and_then(|x| x.as_dict()) else {
+            continue;
+        };
+        let Ok(annots) = page.get(b"Annots").and_then(|x| x.as_array()) else {
+            continue;
+        };
         for annotation in annots {
             if let Ok(id) = annotation.as_reference() {
                 result.insert(id, page_number as usize);
@@ -596,7 +624,9 @@ fn field_value_object(object: &Object) -> Option<Value> {
 
 fn field_value(dict: &Dictionary, key: &[u8]) -> Option<Value> {
     match dict.get(key).ok()? {
-        Object::Array(values) => Some(Value::Array(values.iter().filter_map(field_value_object).collect())),
+        Object::Array(values) => Some(Value::Array(
+            values.iter().filter_map(field_value_object).collect(),
+        )),
         object => field_value_object(object),
     }
 }
@@ -620,60 +650,102 @@ fn field_locations(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Ve
         .collect()
 }
 
-fn collect_form_fields(doc: &Document) -> Vec<FormField> {
+struct FieldDefinition {
+    id: ObjectId,
+    name: String,
+    field: Dictionary,
+    field_type: Vec<u8>,
+}
+
+fn collect_field_definitions(doc: &Document) -> Vec<FieldDefinition> {
     let mut fields = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (id, object) in &doc.objects {
         let Ok(dict) = object.as_dict() else { continue };
-        let Some(name) = inherited_field_name(doc, dict) else { continue };
-        let Some(ft) = inherited_field_type(doc, *id, dict) else { continue };
-        let locations = field_locations(doc, *id, dict);
-        if locations.is_empty() && dict.get(b"Kids").is_err() { continue; }
-        let key = format!("{}:{}", name, String::from_utf8_lossy(&ft));
-        if !seen.insert(key) { continue; }
-        let flags = field_flags(dict) as u32;
-        let read_only = flags & 1 != 0;
-        let first = locations.first();
-        let options = if ft == b"Ch" {
-            choice_options(dict)
-                .into_iter()
-                .map(|pair| FormFieldOption {
-                    value: pair.first().cloned().unwrap_or_default(),
-                    label: pair.get(1).cloned().unwrap_or_else(|| pair.first().cloned().unwrap_or_default()),
-                })
-                .collect()
-        } else if ft == b"Btn" {
-            all_button_states(doc, *id, dict)
-                .into_iter()
-                .map(|value| {
-                    let text = String::from_utf8_lossy(&value).into_owned();
-                    FormFieldOption { value: text.clone(), label: text }
-                })
-                .collect()
-        } else {
-            Vec::new()
+        let Some(name) = inherited_field_name(doc, dict) else {
+            continue;
         };
-        fields.push(FormField {
-            id: object_id_string(*id),
+        let Some(field_type) = inherited_field_type(doc, *id, dict) else {
+            continue;
+        };
+        let locations = field_locations(doc, *id, dict);
+        if locations.is_empty() && dict.get(b"Kids").is_err() {
+            continue;
+        };
+        let key = format!("{}:{}", name, String::from_utf8_lossy(&field_type));
+        if !seen.insert(key) {
+            continue;
+        };
+        fields.push(FieldDefinition {
+            id: *id,
             name,
-            field_type: field_type_name(&ft),
-            page: first.map(|x| x.page),
-            rect: first.map(|x| x.rect),
-            value: field_value(dict, b"V"),
-            default_value: field_value(dict, b"DV"),
-            required: flags & (1 << 1) != 0,
-            read_only,
-            visible: locations.iter().any(|x| x.visible),
-            enabled: !read_only && locations.iter().any(|x| x.enabled),
-            tooltip: dict.get(b"TU").ok().and_then(object_text),
-            options,
-            flags,
-            locations,
-            signed: if ft == b"Sig" { Some(dict.get(b"V").is_ok()) } else { None },
+            field: dict.clone(),
+            field_type,
         });
     }
+    fields.sort_by(|a, b| a.name.cmp(&b.name));
+    fields
+}
+
+fn collect_form_fields(doc: &Document) -> Vec<FormField> {
+    let mut fields: Vec<FormField> = collect_field_definitions(doc)
+        .iter()
+        .map(|definition| {
+            let locations = field_locations(doc, definition.id, &definition.field);
+            let flags = field_flags(&definition.field) as u32;
+            let read_only = flags & 1 != 0;
+            let first = locations.first();
+            FormField {
+                id: object_id_string(definition.id),
+                name: definition.name.clone(),
+                field_type: field_type_name(&definition.field_type),
+                page: first.map(|x| x.page),
+                rect: first.map(|x| x.rect),
+                value: field_value(&definition.field, b"V"),
+                default_value: field_value(&definition.field, b"DV"),
+                required: flags & (1 << 1) != 0,
+                read_only,
+                visible: locations.iter().any(|x| x.visible),
+                enabled: !read_only && locations.iter().any(|x| x.enabled),
+                tooltip: definition.field.get(b"TU").ok().and_then(object_text),
+                options: if definition.field_type == b"Ch" {
+                    choice_options(&definition.field)
+                        .into_iter()
+                        .map(|pair| FormFieldOption {
+                            value: pair.first().cloned().unwrap_or_default(),
+                            label: pair
+                                .get(1)
+                                .cloned()
+                                .unwrap_or_else(|| pair.first().cloned().unwrap_or_default()),
+                        })
+                        .collect()
+                } else if definition.field_type == b"Btn" {
+                    all_button_states(doc, definition.id, &definition.field)
+                        .into_iter()
+                        .map(|value| {
+                            let text = String::from_utf8_lossy(&value).into_owned();
+                            FormFieldOption {
+                                value: text.clone(),
+                                label: text,
+                            }
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                flags,
+                locations,
+                signed: if definition.field_type == b"Sig" {
+                    Some(definition.field.get(b"V").is_ok())
+                } else {
+                    None
+                },
+            }
+        })
+        .collect();
     fields.sort_by(|a, b| {
-        a.page.unwrap_or(usize::MAX)
+        a.page
+            .unwrap_or(usize::MAX)
             .cmp(&b.page.unwrap_or(usize::MAX))
             .then_with(|| a.name.cmp(&b.name))
     });
@@ -690,18 +762,16 @@ pub fn form_fields_json(template: &[u8]) -> Result<String, String> {
         .map_err(|e| format!("Form field serialization failed: {e}"))
 }
 
-fn collect_fields(doc: &Document) -> BTreeMap<String, (ObjectId, Dictionary, Vec<u8>)> {
-    let mut fields = BTreeMap::new();
-    for (id, object) in &doc.objects {
-        let Ok(dict) = object.as_dict() else { continue };
-        let Some(name) = field_name(dict) else {
-            continue;
-        };
-        if let Some(ft) = inherited_field_type(doc, *id, dict) {
-            fields.insert(name, (*id, dict.clone(), ft));
-        }
-    }
-    fields
+fn collect_fields(doc: &Document) -> HashMap<String, (ObjectId, Dictionary, Vec<u8>)> {
+    collect_field_definitions(doc)
+        .into_iter()
+        .map(|definition| {
+            (
+                definition.name,
+                (definition.id, definition.field, definition.field_type),
+            )
+        })
+        .collect()
 }
 
 pub fn fill_pdf(template: &[u8], json: &str) -> Result<(Vec<u8>, FillReport), String> {

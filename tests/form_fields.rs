@@ -1,4 +1,4 @@
-use pdffiller_core::{get_form_fields, FormFieldType};
+use pdffiller_core::{FormFieldType, get_form_fields};
 use std::fs;
 
 #[test]
