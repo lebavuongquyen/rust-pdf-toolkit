@@ -463,6 +463,30 @@ impl PdfSigner {
 
         Ok(output)
     }
+
+    pub fn fill_and_sign(
+        &self,
+        template: &[u8],
+        json: &str,
+    ) -> Result<(Vec<u8>, crate::FillReport), SignError> {
+        let (filled, report) = crate::fill_pdf_with_options(
+            template,
+            json,
+            &crate::FillOptions { flatten: false },
+        )
+        .map_err(|e| SignError::InvalidConfiguration(format!("Fill step failed: {e}")))?;
+
+        let signed = self.sign(&filled)?;
+        Ok((signed, report))
+    }
+}
+
+pub fn fill_and_sign_pdf(
+    template: &[u8],
+    json: &str,
+    signer: &PdfSigner,
+) -> Result<(Vec<u8>, crate::FillReport), SignError> {
+    signer.fill_and_sign(template, json)
 }
 
 impl Default for PdfSigner {

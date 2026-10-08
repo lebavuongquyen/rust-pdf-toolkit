@@ -17,7 +17,10 @@ pub use appearance::{
     GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureFont, SignatureLabels,
     TextAlign,
 };
-pub use sign::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};
+pub use sign::{
+    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
+    Signer,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct FillOptions {

@@ -13,34 +13,42 @@ Rust PDF form filling and digital signing library with a WASM-compatible filling
 - Validate input without modifying the PDF.
 - Render a visual signature image separately from cryptographic signing.
 - Digital signing through a separate PdfSigner API.
+- Unified fill-and-sign API (`fill_and_sign_pdf`) for one-shot form filling and digital signing.
 - Native signing uses incremental PDF updates.
 - Pluggable signer abstraction for future software, remote, HSM, KMS, and cloud signing backends.
 - WASM build remains available for the filling pipeline; digital signing is native-only at this stage.
 
 ## Architecture
 
-The library separates PDF filling, visual signature appearance, and cryptographic signing.
+The library separates PDF filling, visual signature appearance, and cryptographic signing, while offering a unified orchestration pipeline.
 
 ~~~text
 PDF Template
     |
     +--> fill_pdf()
-    |       +--> /Tx
-    |       +--> /Btn
-    |       +--> /Ch
-    |       +--> Image
-    |       +--> report
+    |       +--> /Tx, /Btn, /Ch, Image
+    |       +--> FillReport
+    |       +--> Optional non-signature field flattening
     |
     +--> PdfAppearance
-    |       +--> visual signature image
+    |       +--> Foxit-style visual layout (Left, Right, Behind)
+    |       +--> Typography (Helvetica, Times, Courier, bold, italic)
     |
     +--> PdfSigner
-            +--> signature field
-            +--> incremental PDF revision
-            +--> ByteRange
-            +--> CMS / PKCS#7
-            +--> certificate chain
-            +--> Signer abstraction
+    |       +--> Target signature field validation
+    |       +--> Visual appearance embedding
+    |       +--> Non-signature field flattening & signature locking
+    |       +--> Incremental PDF revision
+    |       +--> Exact ByteRange calculation
+    |       +--> CMS / PKCS#7 SignedData (RSA / P-384 ECDSA)
+    |       +--> Pluggable Signer abstraction (Local, HSM, Cloud KMS)
+    |
+    +--> fill_and_sign_pdf()  <=== UNIFIED PIPELINE
+            +--> 1. In-memory form filling with FillReport
+            +--> 2. Document flattening (optional)
+            +--> 3. Visual signature appearance layout
+            +--> 4. ReadOnly & /Lock field protection
+            +--> 5. Incremental cryptographic signing
 ~~~
 
 A visual signature image is not treated as a digital signature. PdfAppearance changes only the visible appearance. PdfSigner creates the cryptographic signature.
@@ -356,6 +364,282 @@ EcdsaSigner uses SHA-256 with direct CMS signing and the id-ecPublicKey signatur
 
 PdfSigner::validate() resolves the requested field through the same shared field-discovery registry used by filling and metadata discovery. The field must exist, must be a /Sig field, and must not already contain a signature.
 
+## Unified Fill & Sign API (`fill_and_sign_pdf`)
+
+In many automated document workflows, an application needs to populate dynamic customer data into form fields, optionally flatten non-signature form fields into static page content, render a visual signature appearance, and cryptographically seal the document with a digital certificate in a single operation.
+
+`rust-pdffiller` provides a unified entry point:
+- `fill_and_sign_pdf(template: &[u8], json_data: &str, signer: &PdfSigner) -> Result<(Vec<u8>, FillReport), SignError>`
+- `PdfSigner::fill_and_sign(&self, template: &[u8], json_data: &str) -> Result<(Vec<u8>, FillReport), SignError>`
+
+### Example Usage
+
+```rust
+use pdffiller_core::{
+    fill_and_sign_pdf, CertificateSigner, GraphicPosition, PdfSigner,
+    SignatureAppearanceOptions, SignatureFont, TextAlign,
+};
+
+// 1. Load PDF template, form data, and certificate credentials
+let template = std::fs::read("contract_template.pdf")?;
+let json_data = r#"{
+    "customer_name": "Nguyen Van B",
+    "contract_date": "2026-10-08",
+    "service_package": "Enterprise VIP"
+}"#;
+
+let cert_bytes = std::fs::read("company_signer.cert.der")?;
+let key_bytes = std::fs::read("company_signer.key.der")?;
+let signer = CertificateSigner::from_pkcs8_der(cert_bytes, &key_bytes)?;
+
+// 2. Configure Foxit-style visual appearance
+let appearance = SignatureAppearanceOptions {
+    image: Some("data:image/jpeg;base64,...".into()),
+    position: GraphicPosition::Left,
+    font: SignatureFont::Times,
+    bold: true,
+    signer_name: Some("Nguyen Van B".into()),
+    show_signer_name: true,
+    date: Some("2026-10-08 15:30:00".into()),
+    show_date: true,
+    reason: Some("I approve this agreement".into()),
+    show_reason: true,
+    location: Some("Hanoi, Vietnam".into()),
+    show_location: true,
+    ..Default::default()
+};
+
+// 3. Configure PdfSigner with flattening enabled
+let pdf_signer = PdfSigner::new()
+    .field("Signature_0")
+    .signer(signer)
+    .reason("Contract Execution")
+    .location("Hanoi, Vietnam")
+    .flatten(true)              // Flattens text/choice/button fields, locks signature
+    .appearance(appearance);
+
+// 4. Execute unified fill and sign
+let (signed_pdf, report) = pdf_signer.fill_and_sign(&template, json_data)?;
+
+// 5. Inspect structured report and save output
+println!("Filled fields: {}", report.filled_count());
+std::fs::write("contract_executed.pdf", signed_pdf)?;
+```
+
+### Unified Execution Workflow
+
+1. **In-Memory Form Fill**: The template is populated with form values using `fill_pdf_with_options` with `flatten: false`. Form values (`/V`) and widget appearances (`/AP`) are created. The operation yields a detailed `FillReport` indicating the status of every submitted field (`Filled`, `Missing`, `Invalid`, etc.).
+2. **Selective Form Flattening**: If `pdf_signer.flatten(true)` is set:
+   - All standard non-signature fields (`/Tx`, `/Btn`, `/Ch`, Image widgets) are transformed into permanent vector/text graphics embedded in the page's `/Contents` stream and removed from `/AcroForm /Fields`.
+   - The target signature field is **not removed**; its flags are updated with `ReadOnly` (`/Ff 1`), annotation flags `Locked` (`/F 65`), and a standard `/Lock << /Type /SigFieldLock /Action /All >>` dictionary is attached.
+   - Any secondary unsigned signature fields (`/FT /Sig` without `/V`) remain fully interactive for subsequent signers in multi-party workflows.
+3. **Visual Appearance Rendering**: Foxit/Adobe-compatible Form XObjects (`/FRM`, `/n0`, `/n2`) are synthesized according to `SignatureAppearanceOptions` and bound to the widget's `/AP /N` stream.
+4. **Incremental Cryptographic Sealing**: An incremental update section is synthesized appending the new `/Sig` dictionary, `/ByteRange` placeholders, xref table, and trailer. SHA-256 digests are computed over the ByteRange portions, detached CMS/PKCS#7 SignedData is produced, and the cryptographic DER is injected into `/Contents <hex>`.
+
+---
+
+## Deep-Dive: PDF Digital Signature Design & Architecture (Chi Tiết Thiết Kế Chữ Ký Số PDF)
+
+Digital signatures in PDF are fundamentally different from ordinary graphical stamps or form field modifications. A valid PDF digital signature adheres to ISO 32000-1 (PDF 1.7) and Adobe Acrobat / Foxit Reader interoperability specifications.
+
+### 1. AcroForm Signature Structure
+
+In the PDF object model, an interactive signature is represented by an AcroForm field coupled with a Widget annotation and a Signature Dictionary:
+
+```text
+Catalog (/Root)
+   │
+   ├── /AcroForm
+   │      ├── /Fields [ 10 0 R, ... ]
+   │      └── /SigFlags 3   (SignaturesExist | AppendOnly)
+   │
+   └── /Pages ──> Page
+                    └── /Annots [ 10 0 R, ... ]
+                           │
+                           ▼
+                 Field / Widget (10 0 R)
+                 ├── /Type /Annot
+                 ├── /Subtype /Widget
+                 ├── /FT /Sig
+                 ├── /T (Signature_0)
+                 ├── /Rect [ 100 200 300 250 ]
+                 ├── /P (Page Object Ref)
+                 ├── /F 65                (Print | Locked)
+                 ├── /Ff 1                (ReadOnly)
+                 ├── /AP << /N 12 0 R >>  (Visual Appearance)
+                 ├── /Lock <<             (Field Lock Dictionary)
+                 │     /Type /SigFieldLock
+                 │     /Action /All
+                 │   >>
+                 └── /V 11 0 R            (Signature Value Dictionary)
+                           │
+                           ▼
+                 Signature Dictionary (11 0 R)
+                 ├── /Type /Sig
+                 ├── /Filter /Adobe.PPKLite
+                 ├── /SubFilter /adbe.pkcs7.detached
+                 ├── /ByteRange [ 0, 10540, 15660, 4200 ]
+                 ├── /Contents < 30820...0000 >
+                 ├── /Name (Signer Common Name)
+                 ├── /Reason (Approval Reason)
+                 ├── /Location (Signer Location)
+                 └── /M (D:20261008153000+07'00')
+```
+
+- **/FT /Sig**: Designates the AcroForm field type as a Digital Signature.
+- **/V (Value)**: References an indirect Signature Dictionary containing cryptographic parameters.
+- **/AP (Appearance)**: The normal appearance stream (`/N`) displayed by PDF viewers on the page canvas.
+- **/Lock**: Prevents subsequent form modifications from invalidating document semantics.
+
+---
+
+### 2. Incremental Update Mechanics (Revision Appending)
+
+PDF digital signatures **require** Incremental Updates (ISO 32000-1 §7.5.6).
+
+```text
+┌──────────────────────────────────────────────┐
+│  Original Document Bytes (0 .. N)            │  <-- Byte Range Part 1 (Never Modified)
+│  (Existing pages, objects, previous xref)    │
+├──────────────────────────────────────────────┤
+│  Incremental Revision (Appended Bytes)       │
+│  - Modified Page /Annots                     │
+│  - New Signature Widget & Value Dict         │
+│  - Appearance Streams (/AP)                  │
+│  - /ByteRange [ 0, N+x, N+x+len, y ]         │
+│  - /Contents < ... CMS DER in Hex ... >      │
+│  - New xref Table / Stream                   │
+│  - New trailer << /Size .. /Prev .. >>       │
+│  - startxref / %%EOF                         │
+└──────────────────────────────────────────────┘
+```
+
+#### Why Incremental Updates are Mandatory:
+1. **Cryptographic Immutability**: If a signed PDF is resaved using standard full serialization (`lopdf::Document::save()`), object IDs, stream compressions, dictionary ordering, and byte offsets are rearranged. This instantly corrupts byte digests and breaks any existing digital signatures.
+2. **Audit Trail & Multi-Signatures**: By appending new revisions (`xref` pointing back to `trailer /Prev`), PDF viewers like Adobe Acrobat and Foxit can reconstruct every historical version of the document and verify each signer's chronological approval.
+
+---
+
+### 3. ByteRange & Detached CMS Architecture
+
+A digital signature must sign the file, but the signature itself lives inside the file. To resolve this chicken-and-egg paradox, PDF defines the `/ByteRange` 4-tuple:
+
+```text
+/ByteRange [ Offset_1, Length_1, Offset_2, Length_2 ]
+```
+
+```text
+0                                      Offset_2
+│◄──────── Length_1 ────────►│         │◄────── Length_2 ──────►│
+┌────────────────────────────┬─────────┬────────────────────────┐
+│  Covered Bytes (Prefix)    │/Contents│  Covered Bytes (Suffix)│
+│                            │<  ...  >│                        │
+└────────────────────────────┴─────────┴────────────────────────┘
+                             ▲         ▲
+                          Offset_1+  Offset_2
+                          Length_1   (Offset_1 + Length_1 + Hex_Len)
+```
+
+1. **Placeholder Allocation**: The PDF generator allocates a fixed-size hex string placeholder for `/Contents` (e.g. 8,192 hex chars for RSA, 4,096 hex chars for ECDSA) and calculates exact byte offsets for `/ByteRange`.
+2. **Digest Computation**: The byte ranges `[Offset_1 .. Offset_1 + Length_1]` and `[Offset_2 .. Offset_2 + Length_2]` are concatenated and hashed with SHA-256. The placeholder `<...>` itself is excluded from hashing.
+3. **Detached Injection**: The cryptographic signer signs the SHA-256 hash, generates a detached CMS `SignedData` container, encodes it into uppercase hex, and overwrites the allocated placeholder without altering any file offsets.
+
+---
+
+### 4. CMS / PKCS#7 Cryptographic SignedData Structure
+
+`rust-pdffiller` constructs standard ASN.1 DER CMS structures (`adbe.pkcs7.detached` / RFC 5652):
+
+```text
+ContentInfo (1.2.840.113549.1.7.2 - signedData)
+└── SignedData
+    ├── version: 1
+    ├── digestAlgorithms: [ id-sha256 (2.16.840.1.101.3.4.2.1) ]
+    ├── encapContentInfo: id-data (1.2.840.113549.1.7.1) [eContent OMITTED]
+    ├── certificates: [ X.509 Certificate Chain ]
+    └── signerInfos:
+        └── SignerInfo
+            ├── version: 1
+            ├── sid: issuerAndSerialNumber
+            ├── digestAlgorithm: id-sha256
+            ├── signedAttrs:
+            │   ├── 1.2.840.113549.1.9.3 (contentType: id-data)
+            │   ├── 1.2.840.113549.1.9.4 (messageDigest: SHA-256 of ByteRange bytes)
+            │   └── 1.2.840.113549.1.9.5 (signingTime: UTCTime)
+            ├── signatureAlgorithm:
+            │   ├── rsaEncryption (1.2.840.113549.1.1.1) [CertificateSigner]
+            │   └── id-ecPublicKey (1.2.840.10045.2.1) [EcdsaSigner - Foxit Golden Reference]
+            └── signature: <Raw or DER signature bytes>
+```
+
+#### Supported Cryptographic Modes:
+- **RSA PKCS#1 v1.5 with SHA-256 (`CertificateSigner`)**:
+  - Full authenticated CMS signed attributes (`contentType`, `messageDigest`, `signingTime`).
+  - Compatible with Adobe Acrobat, Foxit Reader, and signers using RSA-2048 / RSA-4096 keys.
+- **P-384 ECDSA with SHA-256 (`EcdsaSigner`)**:
+  - Direct CMS signing format adhering to Foxit PDF Editor's golden reference structure (`tests/foxit_reference.rs`).
+  - Compact signature payload and high cryptographic security.
+
+---
+
+### 5. Foxit/Adobe Visual Appearance Layout Engine
+
+When displaying a digital signature, modern PDF editors render a composite visual stamp combining an authorized graphical image (e.g., wet signature scan or company seal) and formatted text metadata:
+
+```text
+┌────────────────────────────────────────────────────────┐
+│ ┌────────────────┐  Digitally signed by Nguyen Van B    │
+│ │                │  DN: C=VN, CN=Nguyen Van B          │
+│ │   [Graphic /   │  Date: 2026.10.08 15:30:00 +07'00'   │
+│ │     Seal]      │  Reason: Contract Execution         │
+│ │                │  Location: Hanoi, Vietnam           │
+│ └────────────────┘                                     │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Appearance Configuration Options (`SignatureAppearanceOptions`):
+- **Graphic Positioning (`GraphicPosition`)**:
+  - `Left`: Image on the left (configurable ratio, default 40%), text on the right.
+  - `Right`: Text on the left, image on the right.
+  - `Behind`: Watermark style — graphic scaled in background with text overlaid.
+  - `ImageOnly`: Graphical stamp only, without metadata text.
+  - `TextOnly`: Pure text layout with clean typography.
+- **Typography & Font Fallback**:
+  - Standard Type1 fonts: `Helvetica`, `Times`, `Courier`.
+  - Font styling: `bold: bool`, `italic: bool`, custom font size, text alignment (`Left`, `Center`, `Right`).
+  - Text color: Custom RGB triple `[r, g, b]`.
+- **Label Localization (`SignatureLabels`)**:
+  - Configurable metadata prefixes (e.g., Vietnamese localization: `"Ký bởi"`, `"Ngày"`, `"Lý do"`, `"Địa điểm"`).
+- **Auto-Wrap & Scaling**:
+  - Automatically wraps long reason strings and subject distinguished names to prevent clipping beyond the widget rectangle.
+
+---
+
+### 6. Form Flattening & Field Protection Security Model
+
+```text
+              Document Protection Strategy
+                          │
+         ┌────────────────┴────────────────┐
+         ▼                                 ▼
+Non-Signature Fields              Signature Fields
+         │                                 │
+Render to /Contents page stream   ┌────────┴────────┐
+Delete from /AcroForm /Fields     ▼                 ▼
+(Static non-editable text/vector) Target Field     Other Sig Fields
+                                  │                 │
+                                  ├─ ReadOnly (Ff 1)└─ Kept Interactive
+                                  ├─ Locked (F 65)     (For 2nd/3rd signers)
+                                  └─ /SigFieldLock
+```
+
+1. **Non-Signature Field Rasterization**: Text inputs, checkboxes, dates, choices, and images are written directly as PDF content operators into the page's `/Contents` stream. Their AcroForm field dictionaries and widget annotations are purged from the document tree. They become permanent, uneditable graphics.
+2. **Signed Field Protection**:
+   - `Ff 1`: Sets the field flag to **ReadOnly**, instructing all conforming viewers not to allow modifying the field value.
+   - `F 65`: Sets annotation flags to **Print** (bit 1) and **Locked** (bit 7), preventing viewers from moving or deleting the widget.
+   - `/Lock << /Type /SigFieldLock /Action /All >>`: Implements the ISO 32000-1 signature field lock dictionary, cryptographically signaling to Adobe Acrobat and Foxit Reader that the entire form is sealed upon signing.
+3. **Preservation of Subsequent Signatures**: Unlike naive PDF flatteners that destroy all form fields, `rust-pdffiller` inspects every field. Any unsigned signature field (`/FT /Sig` without `/V`) is preserved in `/AcroForm /Fields` so that subsequent parties can sign the document.
+
 ## Signer abstraction
 
 The PDF layer is separated from the cryptographic signer.
@@ -637,6 +921,8 @@ Signed PDF
 - AcroForm form field flattening (`FillOptions { flatten: bool }` & `flatten_form_fields`) with signature field preservation
 - Foxit/Adobe style custom signature appearance options (`GraphicPosition`, `SignatureFont`, `TextAlign`, `SignatureAppearanceOptions`)
 - `PdfSigner` document flattening with cryptographic signature protection and field locking (`/Lock`, `ReadOnly`, `Locked`)
+- Unified fill-and-sign API (`fill_and_sign_pdf` & `PdfSigner::fill_and_sign`)
+- Comprehensive PDF digital signature architecture specification (ISO 32000-1 AcroForm, Incremental Update, ByteRange, CMS SignedData, Appearance templates, and Field Locking)
 
 ## License
 

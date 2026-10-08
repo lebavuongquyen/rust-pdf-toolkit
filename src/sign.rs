@@ -3,7 +3,10 @@
 mod native;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};
+pub use native::{
+    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
+    Signer,
+};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
@@ -108,6 +111,26 @@ mod wasm {
                 "Digital signing is native-only at this stage".into(),
             ))
         }
+
+        pub fn fill_and_sign(
+            &self,
+            _template: &[u8],
+            _json: &str,
+        ) -> Result<(Vec<u8>, crate::FillReport), SignError> {
+            Err(SignError::NotImplemented(
+                "Digital signing is native-only at this stage".into(),
+            ))
+        }
+    }
+
+    pub fn fill_and_sign_pdf(
+        _template: &[u8],
+        _json: &str,
+        _signer: &PdfSigner,
+    ) -> Result<(Vec<u8>, crate::FillReport), SignError> {
+        Err(SignError::NotImplemented(
+            "Digital signing is native-only at this stage".into(),
+        ))
     }
 
     impl Default for PdfSigner {
@@ -118,4 +141,7 @@ mod wasm {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};
+pub use wasm::{
+    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
+    Signer,
+};

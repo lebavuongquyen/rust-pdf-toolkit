@@ -1,4 +1,6 @@
-use pdffiller_core::{CertificateSigner, EcdsaSigner, PdfSigner};
+use pdffiller_core::{
+    fill_and_sign_pdf, get_form_fields, CertificateSigner, EcdsaSigner, FieldStatus, PdfSigner,
+};
 use std::fs;
 
 #[test]
@@ -186,3 +188,66 @@ fn sign_api_supports_flatten_and_custom_appearance() {
     fs::create_dir_all("output").expect("output directory");
     fs::write("output/sign_api-flatten-test.pdf", &signed).expect("write output");
 }
+
+#[test]
+fn sign_api_fill_and_sign_unified() {
+    let template = fs::read("reference/template.pdf").expect("template");
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
+    let signer =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+
+    let pdf_signer = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer)
+        .reason("Approved and Certified")
+        .location("Hanoi, Vietnam")
+        .flatten(true);
+
+    let json_data = r#"{
+        "name": "Tran Thi C",
+        "date": "25/12/2026"
+    }"#;
+
+    // Test unified fill_and_sign on PdfSigner
+    let (signed, report) = pdf_signer
+        .fill_and_sign(&template, json_data)
+        .expect("fill_and_sign failed");
+
+    assert!(report.filled_count() >= 2);
+    assert_eq!(report.count(FieldStatus::Failed), 0);
+    assert!(
+        signed
+            .windows(b"/ByteRange".len())
+            .any(|window| window == b"/ByteRange")
+    );
+
+    // Verify fields: non-signature fields flattened, signature field ReadOnly & signed
+    let fields = get_form_fields(&signed).expect("fields");
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "Signature_0");
+    assert_eq!(fields[0].signed, Some(true));
+    assert!(fields[0].read_only);
+
+    // Also test standalone fill_and_sign_pdf function
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let signer2 =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let pdf_signer2 = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer2)
+        .flatten(false);
+
+    let (signed_unflattened, report2) =
+        fill_and_sign_pdf(&template, json_data, &pdf_signer2)
+            .expect("fill_and_sign_pdf failed");
+
+    assert!(report2.filled_count() >= 2);
+    assert_eq!(report2.count(FieldStatus::Failed), 0);
+    let fields_unflattened = get_form_fields(&signed_unflattened).expect("fields unflattened");
+    assert!(fields_unflattened.len() > 1);
+
+    fs::create_dir_all("output").expect("output directory");
+    fs::write("output/sign_api-fill-and-sign.pdf", &signed).expect("write output");
+}
+
