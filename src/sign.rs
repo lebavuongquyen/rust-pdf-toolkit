@@ -100,6 +100,10 @@ mod wasm {
             self
         }
 
+        pub fn design(self, _design: crate::appearance::SignatureDesign) -> Self {
+            self
+        }
+
         pub fn validate(&self, _pdf: &[u8]) -> Result<(), SignError> {
             Err(SignError::NotImplemented(
                 "Digital signing is native-only at this stage".into(),

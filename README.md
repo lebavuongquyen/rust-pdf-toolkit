@@ -215,6 +215,25 @@ pub struct SignatureInfo {
     pub not_before: Option<String>,         // Certificate validity start
     pub not_after: Option<String>,          // Certificate validity expiry
     pub serial_number: Option<String>,      // Certificate serial number
+    pub design: Option<SignatureDesign>,    // Extracted visual design, text lines & image bounds
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureDesign {
+    pub position: GraphicPosition,          // Left, Right, Behind, ImageOnly, TextOnly
+    pub image: Option<String>,              // Base64 Data URL of stamp/seal
+    pub image_bounds: Option<[f64; 4]>,     // [x, y, width, height] within widget box
+    pub text_lines: Vec<SignatureTextLine>, // Detailed lines with exact coordinates
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureTextLine {
+    pub text: String,                       // Line text content
+    pub x: Option<f64>,                     // X coordinate (points)
+    pub y: Option<f64>,                     // Y coordinate (points)
+    pub font_size: Option<f64>,             // Font size (pt)
+    pub font_name: Option<String>,          // Font name, e.g. "F1", "Helvetica"
+    pub color_rgb: Option<[u8; 3]>,         // Text color RGB
 }
 ~~~
 
@@ -240,7 +259,30 @@ pub struct SignatureInfo {
     "issuer": "e8f4f4a3-fcad-44aa-af38-715f6ae7f8af",
     "not_before": "Apr 19 15:53:21 2026 +00:00",
     "not_after": "Apr 20 03:53:21 2027 +00:00",
-    "serial_number": "00:be:55:a1:06:10:1c:ca:5f"
+    "serial_number": "00:be:55:a1:06:10:1c:ca:5f",
+    "design": {
+      "position": "Left",
+      "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+      "image_bounds": [3.0, 2.5, 48.0, 34.0],
+      "text_lines": [
+        {
+          "text": "NGƯỜI KÝ: NGUYỄN VĂN A",
+          "x": 58.5,
+          "y": 26.0,
+          "font_size": 8.5,
+          "font_name": "F1",
+          "color_rgb": [20, 30, 80]
+        },
+        {
+          "text": "NGÀY: 2026-10-08 23:00",
+          "x": 58.5,
+          "y": 15.0,
+          "font_size": 8.0,
+          "font_name": "F1",
+          "color_rgb": [40, 40, 40]
+        }
+      ]
+    }
   }
 }
 ~~~
@@ -437,6 +479,31 @@ std::fs::write("contract_executed.pdf", signed_pdf)?;
 4. **Incremental Cryptographic Sealing**: An incremental update section is synthesized appending the new `/Sig` dictionary, `/ByteRange` placeholders, xref table, and trailer. SHA-256 digests are computed over the ByteRange portions, detached CMS/PKCS#7 SignedData is produced, and the cryptographic DER is injected into `/Contents <hex>`.
 
 ---
+
+### Signature Design Extraction & Round-Trip Re-Injection
+
+`rust-pdffiller` supports **two-way round-trip signature design processing**:
+1. **Extraction**: When reading a signed PDF, `get_form_fields()` parses the `/AP /N` Form XObject content stream to extract the exact `SignatureDesign` containing every text line's position `(x, y)`, font size, color, and `image_bounds`.
+2. **Re-Injection when Signing**: You can pass this `SignatureDesign` directly into `PdfSigner::new().design(design)` to replicate the exact visual layout on a new document, or customize individual text lines and coordinates freely.
+
+```rust
+use pdffiller_core::{get_form_fields, PdfSigner, CertificateSigner, SignatureDesign, SignatureTextLine, GraphicPosition};
+
+// 1. Extract design from a signed reference PDF
+let sample_pdf = std::fs::read("reference/template_signed.pdf")?;
+let fields = get_form_fields(&sample_pdf)?;
+let mut design = fields[0].signature.as_ref().unwrap().design.clone().unwrap();
+
+// 2. Modify or update text lines while preserving layout coordinates
+design.text_lines[0].text = "NGƯỜI KÝ: TRẦN VĂN B".into();
+
+// 3. Sign a new document with the exact extracted design
+let signed = PdfSigner::new()
+    .field("Signature_0")
+    .signer(signer)
+    .design(design)  // Re-injects exact coordinates, image bounds & font sizes
+    .sign(&new_pdf)?;
+```
 
 ## Deep-Dive: PDF Digital Signature Design & Architecture (Chi Tiết Thiết Kế Chữ Ký Số PDF)
 

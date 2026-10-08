@@ -9,13 +9,14 @@ use std::collections::HashMap;
 mod wasm;
 
 mod appearance;
+mod appearance_parser;
 mod appearance_renderer;
 mod field_strategy;
 mod sign;
 
 pub use appearance::{
-    GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureFont, SignatureLabels,
-    TextAlign,
+    GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureDesign, SignatureFont,
+    SignatureLabels, SignatureTextLine, TextAlign,
 };
 pub use sign::{
     fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
@@ -591,6 +592,8 @@ pub struct SignatureInfo {
     pub not_after: Option<String>,
     #[serde(default)]
     pub serial_number: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design: Option<SignatureDesign>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1232,6 +1235,8 @@ fn extract_signature_info(
             (None, None, None, None, None, None)
         };
 
+    let design = appearance_parser::parse_signature_appearance(doc, field_id, field);
+
     Some(SignatureInfo {
         name,
         reason,
@@ -1248,6 +1253,7 @@ fn extract_signature_info(
         not_before,
         not_after,
         serial_number,
+        design,
     })
 }
 

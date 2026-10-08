@@ -208,6 +208,12 @@ impl PdfSigner {
         self
     }
 
+    pub fn design(mut self, design: crate::appearance::SignatureDesign) -> Self {
+        let appearance = crate::appearance::SignatureAppearanceOptions::from(design);
+        self.appearance = Some(appearance);
+        self
+    }
+
     pub fn signer<S>(mut self, signer: S) -> Self
     where
         S: Signer + 'static,

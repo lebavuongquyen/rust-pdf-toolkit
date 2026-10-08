@@ -103,6 +103,33 @@ impl Default for SignatureLabels {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SignatureTextLine {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_rgb: Option<[u8; 3]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct SignatureDesign {
+    #[serde(default)]
+    pub position: GraphicPosition,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_bounds: Option<[f64; 4]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_lines: Vec<SignatureTextLine>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SignatureAppearanceOptions {
     #[serde(default)]
@@ -145,6 +172,19 @@ pub struct SignatureAppearanceOptions {
     pub labels: Option<SignatureLabels>,
     #[serde(default)]
     pub extra_lines: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design: Option<SignatureDesign>,
+}
+
+impl From<SignatureDesign> for SignatureAppearanceOptions {
+    fn from(design: SignatureDesign) -> Self {
+        Self {
+            image: design.image.clone(),
+            position: design.position,
+            design: Some(design),
+            ..Default::default()
+        }
+    }
 }
 
 pub struct PdfAppearance;
