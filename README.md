@@ -98,6 +98,23 @@ The fill report uses these statuses:
 
 A bad individual field does not have to abort the entire fill operation.
 
+### Form Flattening with `fill_pdf_with_options`
+
+To convert interactive form fields into static page content (preventing user editing):
+
+~~~rust
+use pdffiller_core::{fill_pdf_with_options, FillOptions};
+
+let options = FillOptions {
+    flatten: true, // Flattens text, choices, buttons, images into static page graphics
+};
+
+let (pdf, report) = fill_pdf_with_options(&template, &json, &options)?;
+~~~
+
+> [!NOTE]
+> When flattening during fill, **all non-signature fields are flattened**, but **signature fields remain interactive (`/FT /Sig`)** so they can still be signed cryptographically later. Signature fields are never stripped.
+
 ## Form field discovery
 
 The field discovery API scans every AcroForm field, resolving widget annotations, page locations, inherited attributes, exact types, and existing values. Signature fields are discovered with full cryptographic and visual appearance metadata.
@@ -238,48 +255,100 @@ println!("{}", result);
 
 Digital signature fields are deliberately excluded from normal filling. Use PdfSigner for cryptographic signing or PdfAppearance for a visual signature image.
 
-## Visual signature appearance
+## Visual signature appearance (Foxit-style Templates)
+
+`PdfAppearance` allows rendering a standalone signature appearance with flexible layout options matching standard PDF editors (Foxit, Adobe Acrobat):
 
 ~~~rust
-use pdffiller_core::PdfAppearance;
+use pdffiller_core::{
+    GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureFont, TextAlign,
+};
 
 let template = std::fs::read("template.pdf")?;
 
-let output = PdfAppearance::set_signature_image(
-    &template,
-    "signature",
-    "data:image/jpeg;base64,...",
-)?;
+let options = SignatureAppearanceOptions {
+    image: Some("data:image/jpeg;base64,...".to_string()),
+    position: GraphicPosition::Left,      // Left, Right, Behind, ImageOnly, TextOnly
+    image_width_ratio: Some(0.40),       // 40% image width, remainder for text
+    font: SignatureFont::Helvetica,       // Helvetica, Times, Courier
+    font_size: Some(8.5),                // Auto-scaled if None
+    bold: true,
+    italic: false,
+    align: TextAlign::Left,              // Left, Center, Right
+    text_color: Some([30, 30, 30]),       // RGB
+    show_signer_name: true,
+    signer_name: Some("Nguyen Van A".into()),
+    show_date: true,
+    date: Some("2026-10-08 22:30:00".into()),
+    show_reason: true,
+    reason: Some("Approval of contract".into()),
+    show_location: true,
+    location: Some("Hanoi, VN".into()),
+    extra_lines: vec!["Ref: #987654".into()],
+    ..Default::default()
+};
 
+let output = PdfAppearance::set_signature_appearance(&template, "Signature_0", &options)?;
 std::fs::write("signature-appearance.pdf", output)?;
 ~~~
 
-This does not create a CMS/PKCS#7 signature.
+> [!NOTE]
+> `PdfAppearance` modifies visual form XObjects and does not create cryptographic signatures. To cryptographically sign with visual appearance, pass `SignatureAppearanceOptions` directly into `PdfSigner`.
 
 ## Digital signing
 
-Digital signing is a separate API.
+Digital signing is a separate API producing standard cryptographic PKCS#7 / CMS signatures.
 
-### Native certificate signer
+### Native certificate signer with Flattening & Appearance
+
+`PdfSigner` supports automatic document flattening and visual appearance injection:
 
 ~~~rust
-use pdffiller_core::{CertificateSigner, PdfSigner};
+use pdffiller_core::{
+    CertificateSigner, GraphicPosition, PdfSigner, SignatureAppearanceOptions, SignatureFont,
+};
 
 let pdf = std::fs::read("filled.pdf")?;
 let certificate = std::fs::read("identity.cert.der")?;
 let private_key = std::fs::read("identity.key.der")?;
 
 let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key)?;
+
+let appearance = SignatureAppearanceOptions {
+    image: Some("data:image/jpeg;base64,...".into()),
+    position: GraphicPosition::Left,
+    font: SignatureFont::Times,
+    bold: true,
+    signer_name: Some("Nguyen Van A".into()),
+    show_signer_name: true,
+    date: Some("2026-10-08 22:30:00".into()),
+    show_date: true,
+    reason: Some("Contract Approval".into()),
+    show_reason: true,
+    location: Some("Vietnam".into()),
+    show_location: true,
+    ..Default::default()
+};
+
 let signed = PdfSigner::new()
     .field("Signature_0")
     .signer(signer)
-    .reason("Approved")
-    .location("Ho Chi Minh City")
-    .contact("document@example.com")
+    .reason("Contract Approval")
+    .location("Vietnam")
+    .contact("signer@example.com")
+    .flatten(true)              // Flattens other form fields before signing & locks this signature
+    .appearance(appearance)     // Renders custom visual appearance
     .sign(&pdf)?;
 
 std::fs::write("signed.pdf", signed)?;
 ~~~
+
+### Flattening & Signature Protection Mechanics
+
+When `.flatten(true)` is passed to `PdfSigner`:
+1. **Non-signature fields**: Text, Date, Choice, Button, and Image fields are rendered into permanent page content streams and removed from `/AcroForm /Fields` and page `/Annots`.
+2. **Signed signature field**: The cryptographic CMS/PKCS#7 signature is preserved (`/FT /Sig`, `/V`), field flags are marked **ReadOnly** (`/Ff 1`), widget annotation flags are **Locked** (`/F 65`), and a standard `/Lock << /Type /SigFieldLock /Action /All >>` dictionary is attached.
+3. **Unsigned signature fields**: Remain untouched and fully interactive so that subsequent signers can still sign the document!
 
 The native signing layer accepts RSA PKCS#8 DER and P-384 ECDSA PKCS#8 DER private keys with X.509 DER certificates. PKCS#12/PFX parsing is intentionally kept outside the core signing engine for now.
 
@@ -565,6 +634,9 @@ Signed PDF
 - Signer abstraction
 - WASM filling build
 - Native signing integration test
+- AcroForm form field flattening (`FillOptions { flatten: bool }` & `flatten_form_fields`) with signature field preservation
+- Foxit/Adobe style custom signature appearance options (`GraphicPosition`, `SignatureFont`, `TextAlign`, `SignatureAppearanceOptions`)
+- `PdfSigner` document flattening with cryptographic signature protection and field locking (`/Lock`, `ReadOnly`, `Locked`)
 
 ## License
 

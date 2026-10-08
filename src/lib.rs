@@ -13,8 +13,17 @@ mod appearance_renderer;
 mod field_strategy;
 mod sign;
 
-pub use appearance::PdfAppearance;
+pub use appearance::{
+    GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureFont, SignatureLabels,
+    TextAlign,
+};
 pub use sign::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct FillOptions {
+    #[serde(default)]
+    pub flatten: bool,
+}
 
 #[derive(Debug, Clone)]
 pub enum FieldStatus {
@@ -1388,7 +1397,487 @@ fn collect_fields(doc: &Document) -> HashMap<String, (ObjectId, Dictionary, Vec<
         .collect()
 }
 
+fn add_xobject_to_page(
+    doc: &mut Document,
+    page_id: ObjectId,
+    xobj_name: &str,
+    xobj_id: ObjectId,
+) -> Result<(), String> {
+    let res_obj_id = {
+        let page = doc
+            .get_object(page_id)
+            .map_err(|e| e.to_string())?
+            .as_dict()
+            .map_err(|e| e.to_string())?;
+        match page.get(b"Resources") {
+            Ok(Object::Reference(res_id)) => Some(*res_id),
+            _ => None,
+        }
+    };
+
+    if let Some(res_id) = res_obj_id {
+        let xobj_ref = {
+            let res_dict = doc
+                .get_object(res_id)
+                .map_err(|e| e.to_string())?
+                .as_dict()
+                .map_err(|e| e.to_string())?;
+            match res_dict.get(b"XObject") {
+                Ok(Object::Reference(xid)) => Some(*xid),
+                _ => None,
+            }
+        };
+
+        if let Some(xid) = xobj_ref {
+            let x_dict = doc
+                .get_object_mut(xid)
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            x_dict.set(xobj_name.to_string(), Object::Reference(xobj_id));
+        } else {
+            let res_dict = doc
+                .get_object_mut(res_id)
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            if res_dict.get(b"XObject").is_err() {
+                res_dict.set("XObject", Dictionary::new());
+            }
+            let x_dict = res_dict
+                .get_mut(b"XObject")
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            x_dict.set(xobj_name.to_string(), Object::Reference(xobj_id));
+        }
+    } else {
+        let xobj_ref = {
+            let page = doc
+                .get_object(page_id)
+                .map_err(|e| e.to_string())?
+                .as_dict()
+                .map_err(|e| e.to_string())?;
+            match page
+                .get(b"Resources")
+                .ok()
+                .and_then(|r| r.as_dict().ok())
+                .and_then(|rd| rd.get(b"XObject").ok())
+            {
+                Some(Object::Reference(xid)) => Some(*xid),
+                _ => None,
+            }
+        };
+
+        if let Some(xid) = xobj_ref {
+            let x_dict = doc
+                .get_object_mut(xid)
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            x_dict.set(xobj_name.to_string(), Object::Reference(xobj_id));
+        } else {
+            let page = doc
+                .get_object_mut(page_id)
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            if page.get(b"Resources").is_err() {
+                page.set("Resources", Dictionary::new());
+            }
+            let res_dict = page
+                .get_mut(b"Resources")
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            if res_dict.get(b"XObject").is_err() {
+                res_dict.set("XObject", Dictionary::new());
+            }
+            let x_dict = res_dict
+                .get_mut(b"XObject")
+                .map_err(|e| e.to_string())?
+                .as_dict_mut()
+                .map_err(|e| e.to_string())?;
+            x_dict.set(xobj_name.to_string(), Object::Reference(xobj_id));
+        }
+    }
+    Ok(())
+}
+
+fn append_page_content(
+    doc: &mut Document,
+    page_id: ObjectId,
+    content_bytes: Vec<u8>,
+) -> Result<(), String> {
+    let new_stream_id = doc.add_object(Stream::new(Dictionary::new(), content_bytes));
+    let page = doc
+        .get_object_mut(page_id)
+        .map_err(|e| e.to_string())?
+        .as_dict_mut()
+        .map_err(|e| e.to_string())?;
+
+    match page.get_mut(b"Contents") {
+        Ok(Object::Array(arr)) => {
+            arr.push(Object::Reference(new_stream_id));
+        }
+        Ok(Object::Reference(existing_id)) => {
+            let existing = *existing_id;
+            page.set(
+                "Contents",
+                Object::Array(vec![
+                    Object::Reference(existing),
+                    Object::Reference(new_stream_id),
+                ]),
+            );
+        }
+        _ => {
+            page.set("Contents", Object::Reference(new_stream_id));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_or_create_widget_appearance(
+    doc: &mut Document,
+    widget_id: ObjectId,
+    def: &FieldDefinition,
+    w: f64,
+    h: f64,
+) -> Option<ObjectId> {
+    let widget_dict = doc.get_object(widget_id).ok()?.as_dict().ok()?.clone();
+
+    let ap_obj = widget_dict
+        .get(b"AP")
+        .ok()
+        .or_else(|| def.field.get(b"AP").ok());
+    if let Some(ap) = ap_obj.and_then(|x| get_dict_from_object(doc, x)) {
+        if let Ok(n_obj) = ap.get(b"N") {
+            if let Ok(stream_id) = n_obj.as_reference() {
+                if let Ok(obj) = doc.get_object(stream_id) {
+                    if obj.as_stream().is_ok() {
+                        return Some(stream_id);
+                    }
+                    if let Ok(n_dict) = obj.as_dict() {
+                        let state = widget_dict
+                            .get(b"AS")
+                            .ok()
+                            .and_then(|x| x.as_name().ok())
+                            .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
+                        if let Some(state_name) = state {
+                            if state_name != b"Off" {
+                                if let Ok(state_stream_id) =
+                                    n_dict.get(state_name).and_then(|x| x.as_reference())
+                                {
+                                    return Some(state_stream_id);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if let Ok(n_dict) = n_obj.as_dict() {
+                let state = widget_dict
+                    .get(b"AS")
+                    .ok()
+                    .and_then(|x| x.as_name().ok())
+                    .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
+                if let Some(state_name) = state {
+                    if state_name != b"Off" {
+                        if let Ok(state_stream_id) =
+                            n_dict.get(state_name).and_then(|x| x.as_reference())
+                        {
+                            return Some(state_stream_id);
+                        }
+                    }
+                }
+            } else if let Ok(stream) = n_obj.as_stream() {
+                let id = doc.add_object(stream.clone());
+                return Some(id);
+            }
+        }
+    }
+
+    if def.field_type == b"Tx" || def.field_type == b"Ch" {
+        let val_opt = extract_resolved_field_value(doc, def.id, &def.field);
+        if let Some(Value::String(val_str)) = val_opt {
+            if !val_str.is_empty() {
+                let fs = (h * 0.7).clamp(8.0, 12.0);
+                let ty = (h - fs) / 2.0;
+                let escaped = appearance_renderer::escape_pdf_string(&val_str);
+                let content = format!("BT /Helv {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td ({escaped}) Tj ET\n");
+                let stream = Stream::new(
+                    dictionary! {
+                        "Type" => "XObject",
+                        "Subtype" => "Form",
+                        "FormType" => 1,
+                        "BBox" => vec![
+                            Object::Integer(0), Object::Integer(0),
+                            Object::Real(w as f32), Object::Real(h as f32),
+                        ],
+                        "Resources" => dictionary! {
+                            "Font" => dictionary! {
+                                "Helv" => dictionary! {
+                                    "Type" => "Font",
+                                    "Subtype" => "Type1",
+                                    "BaseFont" => "Helvetica",
+                                    "Encoding" => "WinAnsiEncoding",
+                                }
+                            }
+                        },
+                    },
+                    content.into_bytes(),
+                );
+                return Some(doc.add_object(stream));
+            }
+        }
+    }
+
+    None
+}
+
+pub fn flatten_form_fields(
+    doc: &mut Document,
+    keep_unsigned_signatures: bool,
+) -> Result<(), String> {
+    let definitions = collect_field_definitions(doc);
+    let mut fields_to_keep = std::collections::HashSet::new();
+    let mut fields_to_flatten = Vec::new();
+
+    for def in definitions {
+        if def.field_type == b"Sig" {
+            let is_signed = def.field.get(b"V").is_ok();
+            if is_signed {
+                fields_to_keep.insert(def.id);
+                for w in widget_ids(doc, def.id, &def.field) {
+                    fields_to_keep.insert(w);
+                    if let Ok(w_dict) = doc.get_object_mut(w).and_then(|o| o.as_dict_mut()) {
+                        let f = w_dict
+                            .get(b"F")
+                            .ok()
+                            .and_then(|x| x.as_i64().ok())
+                            .unwrap_or(0);
+                        w_dict.set("F", Object::Integer(f | 1 | 64));
+                    }
+                }
+                if let Ok(f_dict) = doc.get_object_mut(def.id).and_then(|o| o.as_dict_mut()) {
+                    let ff = f_dict
+                        .get(b"Ff")
+                        .ok()
+                        .and_then(|x| x.as_i64().ok())
+                        .unwrap_or(0);
+                    f_dict.set("Ff", Object::Integer(ff | 1));
+                }
+            } else if keep_unsigned_signatures {
+                fields_to_keep.insert(def.id);
+                for w in widget_ids(doc, def.id, &def.field) {
+                    fields_to_keep.insert(w);
+                }
+            } else {
+                fields_to_flatten.push(def);
+            }
+        } else {
+            fields_to_flatten.push(def);
+        }
+    }
+
+    // Retain hierarchy of kept fields (signature fields, their widgets, and ancestors)
+    let mut all_kept_ids = fields_to_keep.clone();
+    for kept_id in &fields_to_keep {
+        let mut current = *kept_id;
+        while let Ok(dict) = doc.get_object(current).and_then(|x| x.as_dict()) {
+            if let Ok(parent_id) = dict.get(b"Parent").and_then(|x| x.as_reference()) {
+                all_kept_ids.insert(parent_id);
+                current = parent_id;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let mut widget_page_obj_map = HashMap::new();
+    for (_page_number, page_id) in doc.get_pages() {
+        if let Ok(page) = doc.get_object(page_id).and_then(|x| x.as_dict()) {
+            if let Ok(annots) = page.get(b"Annots").and_then(|x| x.as_array()) {
+                for annot in annots {
+                    if let Ok(id) = annot.as_reference() {
+                        widget_page_obj_map.insert(id, page_id);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut widgets_to_remove = std::collections::HashSet::new();
+
+    for def in &fields_to_flatten {
+        let widgets = widget_ids(doc, def.id, &def.field);
+        for widget_id in widgets {
+            if !all_kept_ids.contains(&widget_id) {
+                widgets_to_remove.insert(widget_id);
+            }
+        }
+    }
+
+    for def in &fields_to_flatten {
+        let widgets = widget_ids(doc, def.id, &def.field);
+        for widget_id in widgets {
+            if all_kept_ids.contains(&widget_id) {
+                continue;
+            }
+
+            let widget_dict = match doc.get_object(widget_id).and_then(|o| o.as_dict()) {
+                Ok(d) => d.clone(),
+                Err(_) => continue,
+            };
+
+            let page_id_opt = widget_dict
+                .get(b"P")
+                .ok()
+                .and_then(|p| p.as_reference().ok())
+                .filter(|id| doc.objects.contains_key(id))
+                .or_else(|| widget_page_obj_map.get(&widget_id).copied());
+
+            let Some(page_id) = page_id_opt else {
+                continue;
+            };
+
+            let Some(rect_vals) = widget_rect_values(&widget_dict) else {
+                continue;
+            };
+
+            let min_x = rect_vals[0].min(rect_vals[2]);
+            let min_y = rect_vals[1].min(rect_vals[3]);
+            let w = (rect_vals[2] - rect_vals[0]).abs();
+            let h = (rect_vals[3] - rect_vals[1]).abs();
+
+            if w <= 0.0 || h <= 0.0 {
+                continue;
+            }
+
+            if let Some(app_id) = resolve_or_create_widget_appearance(doc, widget_id, def, w, h) {
+                let (sx, sy, tx, ty) = if let Ok(stream_obj) = doc.get_object(app_id) {
+                    if let Ok(stream) = stream_obj.as_stream() {
+                        if let Ok(bbox) = stream.dict.get(b"BBox").and_then(|x| x.as_array()) {
+                            if bbox.len() == 4 {
+                                let n = |i: usize| -> f64 {
+                                    match &bbox[i] {
+                                        Object::Integer(v) => *v as f64,
+                                        Object::Real(v) => *v as f64,
+                                        _ => 0.0,
+                                    }
+                                };
+                                let bx1 = n(0);
+                                let by1 = n(1);
+                                let bx2 = n(2);
+                                let by3 = n(3);
+                                let bw = (bx2 - bx1).abs();
+                                let bh = (by3 - by1).abs();
+                                if bw > 0.0 && bh > 0.0 {
+                                    let sx = w / bw;
+                                    let sy = h / bh;
+                                    let tx = min_x - bx1 * sx;
+                                    let ty = min_y - by1 * sy;
+                                    (sx, sy, tx, ty)
+                                } else {
+                                    (1.0, 1.0, min_x, min_y)
+                                }
+                            } else {
+                                (1.0, 1.0, min_x, min_y)
+                            }
+                        } else {
+                            (1.0, 1.0, min_x, min_y)
+                        }
+                    } else {
+                        (1.0, 1.0, min_x, min_y)
+                    }
+                } else {
+                    (1.0, 1.0, min_x, min_y)
+                };
+
+                let xobj_name = format!("FlatX{}_{}", widget_id.0, widget_id.1);
+                add_xobject_to_page(doc, page_id, &xobj_name, app_id)?;
+                let draw_cmd = format!("q {sx:.6} 0 0 {sy:.6} {tx:.6} {ty:.6} cm /{xobj_name} Do Q\n");
+                append_page_content(doc, page_id, draw_cmd.into_bytes())?;
+            }
+        }
+    }
+
+    // Remove widgets from page /Annots
+    for (_page_num, page_id) in doc.get_pages() {
+        if let Ok(page) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
+            if let Ok(annots) = page.get_mut(b"Annots").and_then(|x| x.as_array_mut()) {
+                annots.retain(|item| match item.as_reference() {
+                    Ok(id) => !widgets_to_remove.contains(&id),
+                    _ => true,
+                });
+            }
+        }
+    }
+
+    for kept_id in &all_kept_ids {
+        if let Ok(dict) = doc.get_object_mut(*kept_id).and_then(|x| x.as_dict_mut()) {
+            if let Ok(kids) = dict.get_mut(b"Kids").and_then(|x| x.as_array_mut()) {
+                kids.retain(|k| match k.as_reference() {
+                    Ok(id) => all_kept_ids.contains(&id),
+                    _ => true,
+                });
+            }
+        }
+    }
+
+    // Clean up AcroForm /Fields
+    for (_, object) in doc.objects.iter_mut() {
+        if let Ok(dict) = object.as_dict_mut() {
+            if let Ok(fields) = dict.get_mut(b"Fields").and_then(|x| x.as_array_mut()) {
+                fields.retain(|item| match item.as_reference() {
+                    Ok(id) => all_kept_ids.contains(&id),
+                    _ => true,
+                });
+            }
+            if all_kept_ids.is_empty() {
+                dict.remove(b"NeedAppearances");
+            }
+        }
+    }
+
+    // Remove flattened field and widget objects (and their non-kept parents) from doc.objects
+    let mut flattened_ids = std::collections::HashSet::new();
+    for def in &fields_to_flatten {
+        flattened_ids.insert(def.id);
+        let mut current = def.id;
+        while let Ok(dict) = doc.get_object(current).and_then(|x| x.as_dict()) {
+            if let Ok(parent_id) = dict.get(b"Parent").and_then(|x| x.as_reference()) {
+                if !all_kept_ids.contains(&parent_id) {
+                    flattened_ids.insert(parent_id);
+                }
+                current = parent_id;
+            } else {
+                break;
+            }
+        }
+    }
+    for id in &flattened_ids {
+        if !all_kept_ids.contains(id) {
+            doc.objects.remove(id);
+        }
+    }
+    for wid in &widgets_to_remove {
+        if !all_kept_ids.contains(wid) {
+            doc.objects.remove(wid);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn fill_pdf(template: &[u8], json: &str) -> Result<(Vec<u8>, FillReport), String> {
+    fill_pdf_with_options(template, json, &FillOptions::default())
+}
+
+pub fn fill_pdf_with_options(
+    template: &[u8],
+    json: &str,
+    options: &FillOptions,
+) -> Result<(Vec<u8>, FillReport), String> {
     let data: Value = serde_json::from_str(json).map_err(|e| format!("Invalid JSON: {e}"))?;
     let values = data.as_object().ok_or("Fill data must be a JSON object")?;
     let mut doc = Document::load_mem(template).map_err(|e| format!("PDF load failed: {e}"))?;
@@ -1408,9 +1897,6 @@ pub fn fill_pdf(template: &[u8], json: &str) -> Result<(Vec<u8>, FillReport), St
             }
         })
         .collect();
-    for value in values.values() {
-        let _ = value;
-    }
 
     for (name, value) in values {
         let Some((field_id, field, ft)) = fields.get(name) else {
@@ -1453,9 +1939,13 @@ pub fn fill_pdf(template: &[u8], json: &str) -> Result<(Vec<u8>, FillReport), St
         }
     }
 
-    for id in acroforms {
-        if let Ok(d) = doc.get_object_mut(id).and_then(|x| x.as_dict_mut()) {
-            d.remove(b"NeedAppearances");
+    if options.flatten {
+        flatten_form_fields(&mut doc, true)?;
+    } else {
+        for id in acroforms {
+            if let Ok(d) = doc.get_object_mut(id).and_then(|x| x.as_dict_mut()) {
+                d.remove(b"NeedAppearances");
+            }
         }
     }
 

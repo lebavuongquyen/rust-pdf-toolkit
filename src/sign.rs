@@ -65,6 +65,38 @@ mod wasm {
             Self
         }
 
+        pub fn field(self, _field: impl Into<String>) -> Self {
+            self
+        }
+
+        pub fn signer<S: Signer + 'static>(self, _signer: S) -> Self {
+            self
+        }
+
+        pub fn reason(self, _value: impl Into<String>) -> Self {
+            self
+        }
+
+        pub fn location(self, _value: impl Into<String>) -> Self {
+            self
+        }
+
+        pub fn contact(self, _value: impl Into<String>) -> Self {
+            self
+        }
+
+        pub fn placeholder_size(self, _value: usize) -> Self {
+            self
+        }
+
+        pub fn flatten(self, _value: bool) -> Self {
+            self
+        }
+
+        pub fn appearance(self, _options: crate::appearance::SignatureAppearanceOptions) -> Self {
+            self
+        }
+
         pub fn validate(&self, _pdf: &[u8]) -> Result<(), SignError> {
             Err(SignError::NotImplemented(
                 "Digital signing is native-only at this stage".into(),

@@ -175,6 +175,8 @@ pub struct PdfSigner {
     location: Option<String>,
     contact: Option<String>,
     placeholder_size: usize,
+    flatten: bool,
+    appearance: Option<crate::appearance::SignatureAppearanceOptions>,
 }
 
 impl PdfSigner {
@@ -186,11 +188,23 @@ impl PdfSigner {
             location: None,
             contact: None,
             placeholder_size: 8192,
+            flatten: false,
+            appearance: None,
         }
     }
 
     pub fn field(mut self, field: impl Into<String>) -> Self {
         self.field = Some(field.into());
+        self
+    }
+
+    pub fn flatten(mut self, value: bool) -> Self {
+        self.flatten = value;
+        self
+    }
+
+    pub fn appearance(mut self, options: crate::appearance::SignatureAppearanceOptions) -> Self {
+        self.appearance = Some(options);
         self
     }
 
@@ -267,19 +281,64 @@ impl PdfSigner {
             ));
         }
 
-        let doc = Document::load_mem(pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+        let mut base_pdf = pdf.to_vec();
+        if self.flatten || self.appearance.is_some() {
+            let mut doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+            if self.flatten {
+                crate::flatten_form_fields(&mut doc, true)
+                    .map_err(SignError::SigningFailed)?;
+            }
+            if let Some(app_opts) = &self.appearance {
+                let fields = crate::collect_fields(&doc);
+                if let Some((field_id, field, _)) = fields.get(field_name) {
+                    let widgets = crate::widget_ids(&doc, *field_id, field);
+                    for widget_id in widgets {
+                        let widget = doc
+                            .get_object(widget_id)
+                            .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?
+                            .as_dict()
+                            .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+                        let (bw, bh) = crate::rect(widget).map_err(SignError::PdfLoadFailed)?;
+                        let appearance_id = crate::appearance_renderer::render_signature_appearance(
+                            &mut doc,
+                            bw,
+                            bh,
+                            app_opts,
+                        )
+                        .map_err(SignError::SigningFailed)?;
+                        let widget_mut = doc
+                            .get_object_mut(widget_id)
+                            .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?
+                            .as_dict_mut()
+                            .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+                        crate::appearance_renderer::replace_appearance(widget_mut, appearance_id);
+                    }
+                }
+            }
+            base_pdf = crate::save_document(&mut doc).map_err(SignError::SigningFailed)?;
+        }
+
+        let doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
         let fields = crate::collect_fields(&doc);
-        let Some((field_id, _field, field_type)) = fields.get(field_name) else {
+        let Some((field_id, field, field_type)) = fields.get(field_name) else {
             return Err(SignError::SignatureFieldNotFound(field_name.into()));
         };
         if field_type.as_slice() != b"Sig" {
             return Err(SignError::InvalidSignatureField(field_name.into()));
         }
 
-        let mut incremental = IncrementalDocument::create_from(pdf.to_vec(), doc);
+        let widgets = crate::widget_ids(&doc, *field_id, field);
+
+        let mut incremental = IncrementalDocument::create_from(base_pdf, doc);
         incremental
             .opt_clone_object_to_new_document(*field_id)
             .map_err(|e| SignError::SigningFailed(e.to_string()))?;
+
+        for wid in &widgets {
+            if *wid != *field_id {
+                let _ = incremental.opt_clone_object_to_new_document(*wid);
+            }
+        }
 
         let signature_id = next_object_id(&incremental.new_document);
         let contents_len = self.placeholder_size;
@@ -326,6 +385,22 @@ impl PdfSigner {
             .as_dict_mut()
             .map_err(|_| SignError::InvalidSignatureField(field_name.into()))?;
         field_dict.set("V", Object::Reference(signature_id));
+        let ff = field_dict.get(b"Ff").ok().and_then(|x| x.as_i64().ok()).unwrap_or(0);
+        field_dict.set("Ff", Object::Integer(ff | 1));
+
+        let mut lock_dict = Dictionary::new();
+        lock_dict.set("Type", "SigFieldLock");
+        lock_dict.set("Action", "All");
+        field_dict.set("Lock", Object::Dictionary(lock_dict));
+
+        for wid in &widgets {
+            if let Some(w_obj) = incremental.new_document.objects.get_mut(wid) {
+                if let Ok(w_dict) = w_obj.as_dict_mut() {
+                    let f = w_dict.get(b"F").ok().and_then(|x| x.as_i64().ok()).unwrap_or(0);
+                    w_dict.set("F", Object::Integer(f | 1 | 64));
+                }
+            }
+        }
 
         let mut unsigned = Vec::new();
         incremental
