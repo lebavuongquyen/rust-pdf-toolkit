@@ -20,8 +20,8 @@ pub use appearance::{
     SignatureLabels, SignatureTextLine, TextAlign,
 };
 pub use piece_info_security::{
-    compute_doc_fingerprint, insert_locked_piece_info, verify_and_unlock_piece_info,
-    PieceInfoUnlockResult, PieceInfoUnlockStatus,
+    compute_doc_fingerprint, insert_locked_piece_info, list_piece_info_applications,
+    verify_and_unlock_piece_info, PieceInfoUnlockResult, PieceInfoUnlockStatus,
 };
 pub use sign::{
     fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,

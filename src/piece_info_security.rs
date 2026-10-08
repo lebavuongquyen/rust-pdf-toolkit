@@ -408,3 +408,30 @@ pub fn verify_and_unlock_piece_info(
         app_name: app_name.into(),
     })
 }
+
+/// Lists all application identifier names currently registered under /PieceInfo in the PDF.
+/// Returns an empty Vec if the document has no /PieceInfo dictionary.
+pub fn list_piece_info_applications(pdf_bytes: &[u8]) -> Result<Vec<String>, String> {
+    let doc = Document::load_mem(pdf_bytes).map_err(|e| format!("PDF load failed: {e}"))?;
+    let catalog_id = match doc.trailer.get(b"Root") {
+        Ok(Object::Reference(id)) => *id,
+        _ => return Ok(Vec::new()),
+    };
+    let catalog = match doc.get_object(catalog_id).and_then(|o| o.as_dict()) {
+        Ok(d) => d,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let piece_info_dict = match catalog.get(b"PieceInfo") {
+        Ok(Object::Dictionary(d)) => d,
+        Ok(Object::Reference(id)) => match doc.get_object(*id).and_then(|o| o.as_dict()) {
+            Ok(d) => d,
+            Err(_) => return Ok(Vec::new()),
+        },
+        _ => return Ok(Vec::new()),
+    };
+    let apps: Vec<String> = piece_info_dict
+        .iter()
+        .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+        .collect();
+    Ok(apps)
+}

@@ -101,3 +101,9 @@ pub fn lock_pdf_piece_info(
     Ok(out)
 }
 
+#[wasm_bindgen]
+pub fn list_piece_info_applications_result(template: &[u8]) -> Result<String, JsValue> {
+    let apps = crate::list_piece_info_applications(template).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&apps).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+

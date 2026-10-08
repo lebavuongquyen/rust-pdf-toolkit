@@ -169,3 +169,17 @@ fn test_fill_pdf_with_locked_json_parameter() {
     let data = verify_res.data.unwrap();
     assert_eq!(data["session_id"], "sess_abc_123");
 }
+
+#[test]
+fn test_unmarked_file_returns_not_found_and_empty_list() {
+    let template = fs::read("reference/template.pdf").expect("template.pdf");
+
+    // File PDF gốc chưa từng qua thư viện sẽ không có PieceInfo
+    let apps = pdffiller_core::list_piece_info_applications(&template).expect("list apps");
+    assert!(apps.is_empty(), "File PDF goc phai tra ve danh sach rong");
+
+    // Kiểm tra trên file không có PieceInfo -> Trả về NotFound an toàn
+    let res = verify_and_unlock_piece_info(&template, "AnyApp", "AnySecretKey").expect("verify");
+    assert_eq!(res.status, PieceInfoUnlockStatus::NotFound);
+    assert!(res.data.is_none());
+}
