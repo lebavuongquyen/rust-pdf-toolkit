@@ -65,6 +65,12 @@ mod wasm {
             Self
         }
 
+        pub fn validate(&self, _pdf: &[u8]) -> Result<(), SignError> {
+            Err(SignError::NotImplemented(
+                "Digital signing is native-only at this stage".into(),
+            ))
+        }
+
         pub fn sign(&self, _pdf: &[u8]) -> Result<Vec<u8>, SignError> {
             Err(SignError::NotImplemented(
                 "Digital signing is native-only at this stage".into(),

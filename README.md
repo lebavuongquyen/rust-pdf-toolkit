@@ -45,6 +45,24 @@ PDF Template
 
 A visual signature image is not treated as a digital signature. PdfAppearance changes only the visible appearance. PdfSigner creates the cryptographic signature.
 
+### Shared field model
+
+All field-aware APIs resolve fields through one internal registry:
+
+~~~text
+PDF
+ |
+ v
+collect_field_definitions()
+ |
+ +--> get_form_fields()
+ +--> fill()
+ +--> validate_pdf()
+ +--> PdfSigner::validate()
+~~~
+
+This keeps inherited names, field types, widgets, pages, and signature-field detection consistent across discovery, filling, validation, and signing.
+
 ## Filling
 
 ~~~rust
@@ -110,7 +128,7 @@ let template = std::fs::read("template.pdf")?;
 let json = std::fs::read_to_string("data.json")?;
 
 let result = validate_pdf(&template, &json)?;
-println!("{result}");
+println!("{}", result);
 ~~~
 
 Digital signature fields are deliberately excluded from normal filling. Use PdfSigner for cryptographic signing or PdfAppearance for a visual signature image.
@@ -162,7 +180,7 @@ The native signing layer accepts RSA PKCS#8 DER and P-384 ECDSA PKCS#8 DER priva
 
 EcdsaSigner uses SHA-256 with direct CMS signing and the id-ecPublicKey signature algorithm shape used by the Foxit reference PDF in reference/template_signed.pdf. CertificateSigner keeps the existing RSA PKCS#1 v1.5 flow with signed CMS attributes.
 
-If the requested field already exists, it must be a /Sig field. If it does not exist, the native signing backend can create the signature field during the signing revision.
+PdfSigner::validate() resolves the requested field through the same shared field-discovery registry used by filling and metadata discovery. The field must exist, must be a /Sig field, and must not already contain a signature.
 
 ## Signer abstraction
 

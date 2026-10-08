@@ -84,3 +84,30 @@ fn assert_signature_pdf(template: &[u8], signed: &[u8], expected_subfilter: &[u8
 
     assert!(signature_fields >= 1);
 }
+
+
+#[test]
+fn sign_api_validates_signature_field_before_signing() {
+    let template = fs::read("reference/template.pdf").expect("template");
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
+    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let result = PdfSigner::new().field("Missing").signer(signer).validate(&template);
+    assert!(matches!(result, Err(pdffiller_core::SignError::SignatureFieldNotFound(_))));
+}
+
+
+#[test]
+fn sign_api_rejects_already_signed_field() {
+    let template = fs::read("reference/template.pdf").expect("template");
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
+    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let signed = PdfSigner::new().field("Signature_0").signer(signer).sign(&template).expect("sign");
+
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
+    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let result = PdfSigner::new().field("Signature_0").signer(signer).validate(&signed);
+    assert!(matches!(result, Err(pdffiller_core::SignError::InvalidSignatureField(_))));
+}

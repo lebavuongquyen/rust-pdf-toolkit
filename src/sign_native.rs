@@ -222,7 +222,36 @@ impl PdfSigner {
         self
     }
 
+    pub fn validate(&self, pdf: &[u8]) -> Result<(), SignError> {
+        let field_name = self
+            .field
+            .as_deref()
+            .ok_or_else(|| SignError::InvalidConfiguration("signature field is required".into()))?;
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| SignError::InvalidConfiguration("signer is required".into()))?;
+        if signer.certificate_chain().is_empty() {
+            return Err(SignError::InvalidConfiguration(
+                "signer certificate chain is required".into(),
+            ));
+        }
+        let doc = Document::load_mem(pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+        let fields = crate::collect_fields(&doc);
+        let Some((_, field, field_type)) = fields.get(field_name) else {
+            return Err(SignError::SignatureFieldNotFound(field_name.into()));
+        };
+        if field_type.as_slice() != b"Sig" {
+            return Err(SignError::InvalidSignatureField(field_name.into()));
+        }
+        if field.get(b"V").is_ok() {
+            return Err(SignError::InvalidSignatureField(format!("{field_name} is already signed")));
+        }
+        Ok(())
+    }
+
     pub fn sign(&self, pdf: &[u8]) -> Result<Vec<u8>, SignError> {
+        self.validate(pdf)?;
         let field_name = self
             .field
             .as_deref()
