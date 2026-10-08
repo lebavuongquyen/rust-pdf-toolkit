@@ -1,0 +1,8 @@
+/target
+/output
+/__pycache__
+*.pyc
+/tmp_*
+/0
+
+[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]
