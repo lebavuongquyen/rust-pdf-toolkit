@@ -1,9 +1,3 @@
-use base64::Engine;
-use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
-use lopdf::xref::XrefType;
-use serde_json::Value;
-use std::collections::BTreeMap;
-
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
@@ -13,9 +7,7 @@ mod field_strategy;
 mod sign;
 
 pub use appearance::PdfAppearance;
-pub use sign::{PdfSigner, SignError, Signer};
-#[cfg(not(target_arch = "wasm32"))]
-pub use sign::Pkcs12Signer;
+pub use sign::{CertificateSigner, PdfSigner, SignError, Signer};
 
 #[derive(Debug, Clone)]
 pub enum FieldStatus {
@@ -459,5 +451,3 @@ pub fn validate_pdf(template: &[u8], json: &str) -> Result<String, String> {
 
     Ok(serde_json::json!({"valid":results.iter().all(|x| x["status"]=="valid"),"fields":results}).to_string())
 }
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]
