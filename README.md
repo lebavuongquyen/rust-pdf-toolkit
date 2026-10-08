@@ -1,5 +1,3 @@
-# rust-pdffiller
-
 Rust PDF form filling and digital signing library with a WASM-compatible filling core.
 
 ## Features
@@ -117,20 +115,18 @@ This does not create a CMS/PKCS#7 signature.
 
 Digital signing is a separate API.
 
-### PKCS#12
+### Native certificate signer
 
 ~~~rust
-use pdffiller_core::{PdfSigner, Pkcs12Signer};
+use pdffiller_core::{CertificateSigner, PdfSigner};
 
 let pdf = std::fs::read("filled.pdf")?;
+let certificate = std::fs::read("identity.cert.der")?;
+let private_key = std::fs::read("identity.key.der")?;
 
-let signer = Pkcs12Signer::from_pkcs12_file(
-    "identity.p12",
-    "password",
-)?;
-
+let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key)?;
 let signed = PdfSigner::new()
-    .field("Signature1")
+    .field("Signature_0")
     .signer(signer)
     .reason("Approved")
     .location("Ho Chi Minh City")
@@ -140,12 +136,7 @@ let signed = PdfSigner::new()
 std::fs::write("signed.pdf", signed)?;
 ~~~
 
-The signer can also be loaded from bytes:
-
-~~~rust
-let p12 = std::fs::read("identity.p12")?;
-let signer = Pkcs12Signer::from_pkcs12_bytes(&p12, "password")?;
-~~~
+The current native signer accepts RSA PKCS#8 DER private keys and X.509 DER certificates. PKCS#12/PFX parsing is intentionally kept outside the core signing engine for now.
 
 If the requested field already exists, it must be a /Sig field. If it does not exist, the native signing backend can create the signature field during the signing revision.
 
@@ -168,7 +159,6 @@ The intended extension points are:
 ~~~text
 Signer
   |
-  +-- Pkcs12Signer
   +-- CertificateSigner
   +-- ExternalSigner
   +-- RemoteSigner
@@ -217,14 +207,14 @@ The final signing revision is not produced through the normal full-document save
 
 ## Current native signing support
 
-The current Pkcs12Signer integration supports:
+The current CertificateSigner baseline supports:
 
-- RSA private key
+- RSA private key in PKCS#8 DER
+- X.509 certificate in DER
 - SHA-256
 - RSA PKCS#1 v1.5
-- PKCS#12 / PFX
 
-Other algorithms should be added through the signer abstraction rather than coupled to the PDF engine.
+Other algorithms and credential containers should be added through the signer abstraction rather than coupled to the PDF engine.
 
 ## WASM
 
@@ -271,7 +261,7 @@ Signing uses SignError for:
 - missing signing configuration
 - invalid PDF
 - missing or incompatible signature field
-- invalid PKCS#12
+- invalid certificate or private key
 - unsupported signing algorithm
 - CMS construction failure
 - cryptographic signing failure
@@ -303,7 +293,7 @@ The integration test verifies:
 - a /Sig field exists
 - /ByteRange exists
 
-The test certificate and PKCS#12 identity are test-only credentials.
+The test certificate and private key fixtures are test-only credentials.
 
 ## Repository layout
 
@@ -352,13 +342,13 @@ The PDF engine should not know whether the private key is local, remote, in an H
 
 PDF filling remains usable in browser/WASM environments without requiring private-key handling in the WASM module.
 
-## Dependency note
+## Standalone signing design
 
-The current native signing implementation uses pdfluent-sign as the cryptographic and incremental signing backend.
+The native signing implementation does not use a third-party PDF signing backend.
 
-pdfluent-sign is distributed under the GNU AGPLv3 or a commercial license. Applications distributing native signing support should review that dependency's license requirements and choose an appropriate licensing strategy.
+The PDF incremental update, ByteRange handling, CMS/PKCS#7 construction, certificate metadata extraction, RSA PKCS#1 v1.5 signing, and SHA-256 digest path are owned by this project. Pure-Rust cryptographic crates are used for cryptographic primitives and certificate parsing.
 
-The filling core remains separated from the native signing dependency through the signer abstraction.
+This keeps the PDF engine independent from a PDF signing vendor and leaves external, remote, HSM, and cloud-KMS signers behind the same Signer abstraction.
 
 ## Security
 
@@ -411,23 +401,22 @@ Signed PDF
 - Visual signature appearance API
 - Separation of visual appearance and digital signing
 - Native incremental digital signing API
-- PKCS#12 signer
+- Native RSA certificate signer
 - Signer abstraction
 - WASM filling build
 - Native signing integration test
 
 ### Next
 
-- Certificate + private-key signer API
+- Native CMS verification API
+- Certificate chain support
+- PKCS#12/PFX adapter outside the core engine
 - External signer API with digest/signature metadata
 - Remote signer
 - HSM signer
 - RFC 3161 timestamping
-- PAdES B-T
+- PAdES B-T / B-LT / B-LTA
 - DSS / LTV
-- PAdES B-LT
-- Document timestamp / B-LTA
-- Signature verification API
 - Multiple signature support
 - Streaming output wrappers
 - WASM external-signing bridge
@@ -435,5 +424,3 @@ Signed PDF
 ## License
 
 This repository does not currently declare a project-level license. Review dependency license requirements before publishing or distributing binaries that include native signing support.
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]
