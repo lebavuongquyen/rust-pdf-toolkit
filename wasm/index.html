@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>PDFFiller WASM POC</title></head>
+<body>
+<h1>PDFFiller WASM POC</h1>
+<input id="pdf" type="file" accept=".pdf">
+<input id="json" type="file" accept=".json">
+<button id="validate">Validate</button>
+<button id="fill">Fill</button>
+<pre id="result"></pre>
+<script type="module">
+import init, { fill_pdf_bytes, fill_pdf_base64, fill_pdf_result, validate_pdf_result } from "./pkg/web/pdffiller.js";
+
+await init();
+
+const result = document.querySelector("#result");
+const pdfInput = document.querySelector("#pdf");
+const jsonInput = document.querySelector("#json");
+
+async function inputs() {
+  const pdf = pdfInput.files[0];
+  const json = jsonInput.files[0];
+  if (!pdf || !json) throw new Error("Select a PDF and JSON file.");
+  return {
+    pdf: new Uint8Array(await pdf.arrayBuffer()),
+    json: await json.text()
+  };
+}
+
+document.querySelector("#validate").onclick = async () => {
+  try {
+    const input = await inputs();
+    result.textContent = validate_pdf_result(input.pdf, input.json);
+  } catch (error) {
+    result.textContent = String(error);
+  }
+};
+
+document.querySelector("#fill").onclick = async () => {
+  try {
+    const input = await inputs();
+    const report = JSON.parse(fill_pdf_result(input.pdf, input.json));
+    const bytes = fill_pdf_bytes(input.pdf, input.json);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "filled.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+    result.textContent = JSON.stringify({
+      report,
+      bytes: bytes.length,
+      base64Length: fill_pdf_base64(input.pdf, input.json).length
+    }, null, 2);
+  } catch (error) {
+    result.textContent = String(error);
+  }
+};
+</script>
+</body>
+</html>
+
+[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]
