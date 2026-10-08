@@ -92,7 +92,7 @@ fn extracts_image_field_value_when_filled() {
     })
     .to_string();
 
-    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_json).expect("fill");
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_json, None).expect("fill");
     assert_eq!(report.filled_count(), 1);
 
     let fields_after = get_form_fields(&filled_bytes).expect("fields");
@@ -198,7 +198,7 @@ fn extracts_all_field_types_values_when_filled() {
         "Image Field0": data_url,
     });
 
-    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_data.to_string()).expect("fill");
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_data.to_string(), None).expect("fill");
     assert!(report.filled_count() >= 6);
 
     let filled_fields = get_form_fields(&filled_bytes).expect("fields after fill");
@@ -239,7 +239,7 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (unflat_bytes, _) = pdffiller_core::fill_pdf_with_options(
         &template,
         &fill_data.to_string(),
-        &pdffiller_core::FillOptions { flatten: false },
+        &pdffiller_core::FillOptions { flatten: false, ..Default::default() },
     )
     .expect("fill unflat");
     let unflat_fields = get_form_fields(&unflat_bytes).expect("fields unflat");
@@ -249,7 +249,7 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (flat_bytes, report) = pdffiller_core::fill_pdf_with_options(
         &template,
         &fill_data.to_string(),
-        &pdffiller_core::FillOptions { flatten: true },
+        &pdffiller_core::FillOptions { flatten: true, ..Default::default() },
     )
     .expect("fill flat");
     assert_eq!(report.filled_count(), 2);
@@ -266,7 +266,7 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (flat_ref_bytes, _) = pdffiller_core::fill_pdf_with_options(
         &template_ref,
         r#"{"full_name":"Test User"}"#,
-        &pdffiller_core::FillOptions { flatten: true },
+        &pdffiller_core::FillOptions { flatten: true, ..Default::default() },
     )
     .expect("fill flat template.pdf");
     let flat_ref_fields = get_form_fields(&flat_ref_bytes).expect("fields flat template.pdf");
@@ -319,4 +319,42 @@ fn pdf_appearance_sets_custom_signature_layout() {
     let sig_f = fields.iter().find(|f| f.name == "Signature_0").expect("Signature_0");
     assert_eq!(sig_f.field_type, FormFieldType::Signature);
     assert!(sig_f.value.is_some());
+}
+
+#[test]
+fn test_fill_pdf_piece_info_insertion_and_extraction() {
+    let template = fs::read("reference/template.pdf").expect("template.pdf");
+
+    // 1. None piece_info -> None extracted
+    let (pdf_no_piece, _) = pdffiller_core::fill_pdf(&template, r#"{"name":"Test"}"#, None).expect("fill");
+    assert_eq!(pdffiller_core::get_piece_info(&pdf_no_piece).unwrap(), None);
+
+    // 2. Some piece_info as JSON string
+    let piece_str = r#"{"AppMeta":{"doc_uuid":"uuid-123-abc","version":2,"active":true}}"#;
+    let (pdf_with_piece, report) =
+        pdffiller_core::fill_pdf(&template, r#"{"name":"Test"}"#, Some(piece_str))
+            .expect("fill with piece");
+    assert_eq!(report.filled_count(), 1);
+
+    let extracted = pdffiller_core::get_piece_info(&pdf_with_piece)
+        .unwrap()
+        .expect("piece_info");
+    assert_eq!(extracted["AppMeta"]["doc_uuid"], "uuid-123-abc");
+    assert_eq!(extracted["AppMeta"]["version"], 2);
+    assert_eq!(extracted["AppMeta"]["active"], true);
+
+    // 3. Flattened PDF with piece_info
+    let opt = pdffiller_core::FillOptions::new()
+        .flatten(true)
+        .piece_info(serde_json::json!({
+            "FlattenMeta": { "status": "archived", "pages": 1 }
+        }));
+    let (pdf_flattened, _) =
+        pdffiller_core::fill_pdf_with_options(&template, r#"{"name":"Test"}"#, &opt)
+            .expect("fill flat");
+    let ext_flat = pdffiller_core::get_piece_info(&pdf_flattened)
+        .unwrap()
+        .expect("flat piece_info");
+    assert_eq!(ext_flat["FlattenMeta"]["status"], "archived");
+    assert_eq!(ext_flat["FlattenMeta"]["pages"], 1);
 }

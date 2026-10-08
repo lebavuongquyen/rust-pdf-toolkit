@@ -100,6 +100,14 @@ mod wasm {
             self
         }
 
+        pub fn piece_info(self, _value: serde_json::Value) -> Self {
+            self
+        }
+
+        pub fn piece_info_json(self, _json_str: &str) -> Result<Self, SignError> {
+            Ok(self)
+        }
+
         pub fn design(self, _design: crate::appearance::SignatureDesign) -> Self {
             self
         }

@@ -78,8 +78,9 @@ use pdffiller_core::fill_pdf;
 
 let template = std::fs::read("template.pdf")?;
 let json = std::fs::read_to_string("data.json")?;
+let piece_info = Some(r#"{"MyApp": {"doc_id": "DOC-12345", "version": 1}}"#);
 
-let (pdf, report) = fill_pdf(&template, &json)?;
+let (pdf, report) = fill_pdf(&template, &json, piece_info)?;
 
 std::fs::write("filled.pdf", pdf)?;
 println!("{}", pdffiller_core::report_json(&report));
@@ -106,18 +107,30 @@ The fill report uses these statuses:
 
 A bad individual field does not have to abort the entire fill operation.
 
-### Form Flattening with `fill_pdf_with_options`
+### Custom Metadata with `PieceInfo` & `FillOptions`
 
-To convert interactive form fields into static page content (preventing user editing):
+You can attach application-specific metadata into the PDF Document Catalog (`/Root /PieceInfo` compliant with ISO 32000-1 §14.5). If `piece_info` is `None`, the catalog is left unmodified:
 
 ~~~rust
-use pdffiller_core::{fill_pdf_with_options, FillOptions};
+use pdffiller_core::{fill_pdf_with_options, get_piece_info, FillOptions};
 
 let options = FillOptions {
     flatten: true, // Flattens text, choices, buttons, images into static page graphics
+    piece_info: Some(serde_json::json!({
+        "MyApp": {
+            "LastModified": "D:20261008233000Z",
+            "Private": {
+                "transaction_id": "TX-9988-ABC",
+                "flow_id": 42
+            }
+        }
+    })),
 };
 
 let (pdf, report) = fill_pdf_with_options(&template, &json, &options)?;
+
+// Extract PieceInfo metadata back from any PDF
+let metadata: Option<serde_json::Value> = get_piece_info(&pdf)?;
 ~~~
 
 > [!NOTE]
@@ -458,7 +471,8 @@ let pdf_signer = PdfSigner::new()
     .reason("Contract Execution")
     .location("Hanoi, Vietnam")
     .flatten(true)              // Flattens text/choice/button fields, locks signature
-    .appearance(appearance);
+    .appearance(appearance)
+    .piece_info_json(r#"{"AuditPortal":{"event_id":"EV-7890","status":"sealed"}}"#)?;
 
 // 4. Execute unified fill and sign
 let (signed_pdf, report) = pdf_signer.fill_and_sign(&template, json_data)?;

@@ -367,4 +367,77 @@ fn sign_api_signature_design_roundtrip_extract_and_inject() {
     fs::write("output/sign_api-design-roundtrip.pdf", &signed).expect("write output");
 }
 
+#[test]
+fn sign_api_piece_info_support() {
+    let template = fs::read("reference/template.pdf").expect("template");
+    let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
+    let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
+    let signer =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+
+    // 1. Without piece_info -> get_piece_info returns None
+    let signed_no_piece = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer)
+        .sign(&template)
+        .expect("sign no piece info");
+    assert_eq!(pdffiller_core::get_piece_info(&signed_no_piece).unwrap(), None);
+
+    // 2. With piece_info builder -> get_piece_info returns the injected data
+    let signer2 = CertificateSigner::from_pkcs8_der(
+        fs::read("tests/fixtures/test-signing.cert.der").expect("certificate"),
+        &private_key,
+    )
+    .expect("certificate signer");
+
+    let piece_json = serde_json::json!({
+        "PureSign": {
+            "LastModified": "D:20261008233000Z",
+            "Private": {
+                "document_id": "DOC-XYZ-12345",
+                "flow_id": 9999,
+                "tags": ["contract", "signed", "prod"]
+            }
+        }
+    });
+
+    let signed_with_piece = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer2)
+        .piece_info(piece_json.clone())
+        .sign(&template)
+        .expect("sign with piece info");
+
+    let extracted = pdffiller_core::get_piece_info(&signed_with_piece)
+        .expect("get_piece_info")
+        .expect("piece_info exists");
+
+    assert_eq!(extracted["PureSign"]["Private"]["document_id"], "DOC-XYZ-12345");
+    assert_eq!(extracted["PureSign"]["Private"]["flow_id"], 9999);
+    assert_eq!(extracted["PureSign"]["Private"]["tags"][0], "contract");
+    assert_eq!(extracted["PureSign"]["Private"]["tags"][1], "signed");
+    assert_eq!(extracted["PureSign"]["Private"]["tags"][2], "prod");
+
+    // 3. One-shot fill_and_sign with piece_info
+    let signer3 = CertificateSigner::from_pkcs8_der(
+        fs::read("tests/fixtures/test-signing.cert.der").expect("certificate"),
+        &private_key,
+    )
+    .expect("certificate signer");
+
+    let fill_data = r#"{"name":"Nguyen Van A"}"#;
+    let (signed_fill, report) = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer3)
+        .piece_info(piece_json.clone())
+        .fill_and_sign(&template, fill_data)
+        .expect("fill_and_sign with piece_info");
+
+    assert_eq!(report.filled_count(), 1);
+    let extracted_fill = pdffiller_core::get_piece_info(&signed_fill)
+        .expect("get_piece_info")
+        .expect("piece_info exists");
+    assert_eq!(extracted_fill["PureSign"]["Private"]["document_id"], "DOC-XYZ-12345");
+}
+
 

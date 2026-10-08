@@ -177,6 +177,7 @@ pub struct PdfSigner {
     placeholder_size: usize,
     flatten: bool,
     appearance: Option<crate::appearance::SignatureAppearanceOptions>,
+    piece_info: Option<serde_json::Value>,
 }
 
 impl PdfSigner {
@@ -190,6 +191,7 @@ impl PdfSigner {
             placeholder_size: 8192,
             flatten: false,
             appearance: None,
+            piece_info: None,
         }
     }
 
@@ -201,6 +203,19 @@ impl PdfSigner {
     pub fn flatten(mut self, value: bool) -> Self {
         self.flatten = value;
         self
+    }
+
+    pub fn piece_info(mut self, value: serde_json::Value) -> Self {
+        self.piece_info = Some(value);
+        self
+    }
+
+    pub fn piece_info_json(mut self, json_str: &str) -> Result<Self, SignError> {
+        let value: serde_json::Value = serde_json::from_str(json_str).map_err(|e| {
+            SignError::InvalidConfiguration(format!("Invalid piece_info JSON: {e}"))
+        })?;
+        self.piece_info = Some(value);
+        Ok(self)
     }
 
     pub fn appearance(mut self, options: crate::appearance::SignatureAppearanceOptions) -> Self {
@@ -288,10 +303,14 @@ impl PdfSigner {
         }
 
         let mut base_pdf = pdf.to_vec();
-        if self.flatten || self.appearance.is_some() {
+        if self.flatten || self.appearance.is_some() || self.piece_info.is_some() {
             let mut doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
             if self.flatten {
                 crate::flatten_form_fields(&mut doc, true)
+                    .map_err(SignError::SigningFailed)?;
+            }
+            if let Some(ref p_info) = self.piece_info {
+                crate::insert_piece_info(&mut doc, p_info)
                     .map_err(SignError::SigningFailed)?;
             }
             if let Some(app_opts) = &self.appearance {
@@ -478,7 +497,10 @@ impl PdfSigner {
         let (filled, report) = crate::fill_pdf_with_options(
             template,
             json,
-            &crate::FillOptions { flatten: false },
+            &crate::FillOptions {
+                flatten: false,
+                piece_info: self.piece_info.clone(),
+            },
         )
         .map_err(|e| SignError::InvalidConfiguration(format!("Fill step failed: {e}")))?;
 

@@ -23,10 +23,28 @@ pub use sign::{
     Signer,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct FillOptions {
     #[serde(default)]
     pub flatten: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub piece_info: Option<Value>,
+}
+
+impl FillOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn flatten(mut self, flatten: bool) -> Self {
+        self.flatten = flatten;
+        self
+    }
+
+    pub fn piece_info(mut self, piece_info: Value) -> Self {
+        self.piece_info = Some(piece_info);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1878,8 +1896,178 @@ pub fn flatten_form_fields(
     Ok(())
 }
 
-pub fn fill_pdf(template: &[u8], json: &str) -> Result<(Vec<u8>, FillReport), String> {
-    fill_pdf_with_options(template, json, &FillOptions::default())
+pub fn json_to_pdf_object(val: &Value) -> Object {
+    match val {
+        Value::Null => Object::Null,
+        Value::Bool(b) => Object::Boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Object::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                Object::Real(f as f32)
+            } else {
+                Object::Null
+            }
+        }
+        Value::String(s) => Object::string_literal(s.as_str()),
+        Value::Array(arr) => {
+            let pdf_arr = arr.iter().map(json_to_pdf_object).collect();
+            Object::Array(pdf_arr)
+        }
+        Value::Object(map) => {
+            let mut dict = Dictionary::new();
+            for (k, v) in map {
+                dict.set(k.as_bytes().to_vec(), json_to_pdf_object(v));
+            }
+            Object::Dictionary(dict)
+        }
+    }
+}
+
+pub fn pdf_object_to_json(obj: &Object, doc: &Document) -> Value {
+    match obj {
+        Object::Null => Value::Null,
+        Object::Boolean(b) => Value::Bool(*b),
+        Object::Integer(i) => Value::Number((*i).into()),
+        Object::Real(f) => serde_json::Number::from_f64((*f).into())
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        Object::Name(bytes) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
+        Object::String(bytes, _) => {
+            if let Some(txt) = object_text(obj) {
+                Value::String(txt)
+            } else {
+                Value::String(String::from_utf8_lossy(bytes).into_owned())
+            }
+        }
+        Object::Array(arr) => {
+            let items: Vec<Value> = arr.iter().map(|item| pdf_object_to_json(item, doc)).collect();
+            Value::Array(items)
+        }
+        Object::Dictionary(dict) => {
+            let mut map = serde_json::Map::new();
+            for (k, v) in dict.iter() {
+                let key = String::from_utf8_lossy(k).into_owned();
+                map.insert(key, pdf_object_to_json(v, doc));
+            }
+            Value::Object(map)
+        }
+        Object::Reference(id) => {
+            if let Ok(resolved) = doc.get_object(*id) {
+                pdf_object_to_json(resolved, doc)
+            } else {
+                Value::Null
+            }
+        }
+        Object::Stream(stream) => {
+            let mut map = serde_json::Map::new();
+            for (k, v) in stream.dict.iter() {
+                let key = String::from_utf8_lossy(k).into_owned();
+                map.insert(key, pdf_object_to_json(v, doc));
+            }
+            Value::Object(map)
+        }
+    }
+}
+
+pub fn insert_piece_info(doc: &mut Document, piece_info: &Value) -> Result<(), String> {
+    if piece_info.is_null() {
+        return Ok(());
+    }
+    let catalog_id = match doc.trailer.get(b"Root") {
+        Ok(Object::Reference(id)) => *id,
+        _ => return Err("PDF Catalog not found in trailer".to_string()),
+    };
+
+    let new_obj = json_to_pdf_object(piece_info);
+
+    let existing_ref = {
+        let catalog = doc
+            .get_object(catalog_id)
+            .map_err(|e| format!("Failed to get Catalog: {e}"))?
+            .as_dict()
+            .map_err(|e| format!("Catalog is not a dictionary: {e}"))?;
+        match catalog.get(b"PieceInfo") {
+            Ok(Object::Reference(id)) => Some(*id),
+            _ => None,
+        }
+    };
+
+    if let Some(r_id) = existing_ref {
+        if let Ok(piece_dict) = doc.get_object_mut(r_id).and_then(|o| o.as_dict_mut()) {
+            if let Object::Dictionary(new_dict) = new_obj {
+                for (k, v) in new_dict.iter() {
+                    piece_dict.set(k.clone(), v.clone());
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    let catalog = doc
+        .get_object_mut(catalog_id)
+        .map_err(|e| format!("Failed to get Catalog: {e}"))?
+        .as_dict_mut()
+        .map_err(|e| format!("Catalog is not a dictionary: {e}"))?;
+
+    match catalog.get_mut(b"PieceInfo") {
+        Ok(Object::Dictionary(existing_dict)) => {
+            if let Object::Dictionary(new_dict) = new_obj {
+                for (k, v) in new_dict.iter() {
+                    existing_dict.set(k.clone(), v.clone());
+                }
+            }
+        }
+        _ => {
+            catalog.set(b"PieceInfo".as_slice(), new_obj);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn get_piece_info(pdf: &[u8]) -> Result<Option<Value>, String> {
+    let doc = Document::load_mem(pdf).map_err(|e| format!("PDF load failed: {e}"))?;
+    let catalog_id = match doc.trailer.get(b"Root") {
+        Ok(Object::Reference(id)) => *id,
+        _ => return Ok(None),
+    };
+    let catalog = match doc.get_object(catalog_id).and_then(|o| o.as_dict()) {
+        Ok(d) => d,
+        Err(_) => return Ok(None),
+    };
+    match catalog.get(b"PieceInfo") {
+        Ok(obj) => {
+            let val = pdf_object_to_json(obj, &doc);
+            if val.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(val))
+            }
+        }
+        Err(_) => Ok(None),
+    }
+}
+
+pub fn fill_pdf(
+    template: &[u8],
+    json: &str,
+    piece_info: Option<&str>,
+) -> Result<(Vec<u8>, FillReport), String> {
+    let piece_info_val = match piece_info {
+        Some(s) if !s.trim().is_empty() => {
+            Some(serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?)
+        }
+        _ => None,
+    };
+    fill_pdf_with_options(
+        template,
+        json,
+        &FillOptions {
+            flatten: false,
+            piece_info: piece_info_val,
+        },
+    )
 }
 
 pub fn fill_pdf_with_options(
@@ -1956,6 +2144,10 @@ pub fn fill_pdf_with_options(
                 d.remove(b"NeedAppearances");
             }
         }
+    }
+
+    if let Some(ref p_info) = options.piece_info {
+        insert_piece_info(&mut doc, p_info)?;
     }
 
     let output = save_document(&mut doc)?;
