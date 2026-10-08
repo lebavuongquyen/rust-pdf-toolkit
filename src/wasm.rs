@@ -51,3 +51,33 @@ pub fn get_piece_info_result(template: &[u8]) -> Result<Option<String>, JsValue>
 pub fn validate_pdf_result(template: &[u8], json: &str) -> Result<String, JsValue> {
     validate_pdf(template, json).map_err(|e| JsValue::from_str(&e))
 }
+
+#[wasm_bindgen]
+pub fn verify_and_unlock_piece_info_result(
+    template: &[u8],
+    app_name: &str,
+    secret_key: &str,
+) -> Result<String, JsValue> {
+    let res = crate::verify_and_unlock_piece_info(template, app_name, secret_key)
+        .map_err(|e| JsValue::from_str(&e))?;
+    let status_str = match res.status {
+        crate::PieceInfoUnlockStatus::Valid => "valid",
+        crate::PieceInfoUnlockStatus::Tampered(ref msg) => {
+            return Ok(serde_json::json!({
+                "status": "tampered",
+                "reason": msg,
+                "app_name": res.app_name
+            })
+            .to_string());
+        }
+        crate::PieceInfoUnlockStatus::DocumentMismatch => "document_mismatch",
+        crate::PieceInfoUnlockStatus::WrongKey => "wrong_key",
+        crate::PieceInfoUnlockStatus::NotFound => "not_found",
+    };
+    Ok(serde_json::json!({
+        "status": status_str,
+        "data": res.data,
+        "app_name": res.app_name
+    })
+    .to_string())
+}

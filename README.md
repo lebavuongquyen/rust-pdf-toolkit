@@ -17,6 +17,8 @@ Rust PDF form filling and digital signing library with a WASM-compatible filling
 - Native signing uses incremental PDF updates.
 - Pluggable signer abstraction for future software, remote, HSM, KMS, and cloud signing backends.
 - WASM build remains available for the filling pipeline; digital signing is native-only at this stage.
+- ISO 32000-1 §14.5 `/PieceInfo` application metadata injection and extraction.
+- **Stealth Cryptographic Lock**: AES-256-GCM encryption, document binding fingerprint (anti-transplant), and HMAC-SHA256 tamper verification with zero visual artifacts and zero antivirus warnings.
 
 ## Architecture
 
@@ -132,6 +134,62 @@ let (pdf, report) = fill_pdf_with_options(&template, &json, &options)?;
 // Extract PieceInfo metadata back from any PDF
 let metadata: Option<serde_json::Value> = get_piece_info(&pdf)?;
 ~~~
+
+### Stealth Cryptographic Lock for `PieceInfo` (`insert_locked_piece_info`)
+
+When saving sensitive private application data (e.g., transaction ID, audit trace, CIF, signer IP) into `/PieceInfo`, you can cryptographically seal and encrypt it using a **Secret Key**:
+
+~~~rust
+use pdffiller_core::{
+    insert_locked_piece_info, verify_and_unlock_piece_info, FillOptions, PieceInfoUnlockStatus,
+};
+
+let secret_key = "EnterpriseSecretKey@2026";
+let app_name = "CoreBanking";
+let private_data = serde_json::json!({
+    "account_id": "ACC-998877",
+    "customer_cif": "CIF-123456",
+    "transaction_amount": 50000000,
+    "currency": "VND",
+    "approved": true
+});
+
+// 1. Lock and inject during form filling:
+let options = FillOptions::new()
+    .flatten(true)
+    .locked_piece_info(app_name, private_data, secret_key);
+
+let (pdf_bytes, report) = pdffiller_core::fill_pdf_with_options(&template, &json, &options)?;
+
+// 2. Unlock and verify integrity later:
+let result = verify_and_unlock_piece_info(&pdf_bytes, app_name, secret_key)?;
+
+match result.status {
+    PieceInfoUnlockStatus::Valid => {
+        println!("Verified Data: {:?}", result.data.unwrap());
+    }
+    PieceInfoUnlockStatus::WrongKey => {
+        println!("Access Denied: Incorrect secret key.");
+    }
+    PieceInfoUnlockStatus::Tampered(reason) => {
+        println!("ALERT: Data has been tampered with or modified: {}", reason);
+    }
+    PieceInfoUnlockStatus::DocumentMismatch => {
+        println!("ALERT: PieceInfo was copied/transplanted from another PDF document!");
+    }
+    PieceInfoUnlockStatus::NotFound => {
+        println!("No PieceInfo found for application {}", app_name);
+    }
+}
+~~~
+
+#### Security & Compliance Guarantees:
+1. **100% Stealth (Invisible on Page)**: Stored strictly in the PDF Document Catalog (`/Root /PieceInfo`) under ISO 32000-1 §14.5. It does not introduce any visual elements to page content streams.
+2. **Seamless Viewing (No Password Prompts)**: Does not utilize standard PDF password encryption (`/Encrypt`), so Adobe Acrobat, Foxit Reader, Chrome, Edge, Safari, iOS, and Android open and print the PDF smoothly without any password popups.
+3. **Zero Antivirus / Malware Warnings (0% False Positives)**: Stored as pure static PDF hexadecimal string dictionaries (`/Payload <hex>`, `/DocBinding <hex>`, `/HMAC <hex>`). Contains zero JavaScript (`/JS`), zero external actions (`/Launch`), and zero embedded executables.
+4. **Confidentiality (AES-256-GCM)**: Plaintext is encrypted with AES-256-GCM using a cryptographically random 96-bit nonce. Outside parties inspecting the PDF structure only see opaque hex strings.
+5. **Anti-Transplant Protection (Document Binding)**: Cryptographically binds the metadata to the host PDF's structural fingerprint (trailer and page tree). If an attacker copies the `/PieceInfo` block to another PDF document, verification fails with `DocumentMismatch`.
+6. **Tamper-Proof Verification (HMAC-SHA256)**: Any byte modification to the ciphertext, app name, nonce, or binding immediately triggers `WrongKey` or `Tampered`.
 
 > [!NOTE]
 > When flattening during fill, **all non-signature fields are flattened**, but **signature fields remain interactive (`/FT /Sig`)** so they can still be signed cryptographically later. Signature fields are never stripped.
@@ -891,17 +949,24 @@ src/
 ├── main.rs
 ├── field_strategy.rs
 ├── appearance.rs
+├── appearance_parser.rs
 ├── appearance_renderer.rs
+├── piece_info_security.rs
 ├── sign.rs
+├── sign_native.rs
 └── wasm.rs
 
 reference/
 ├── template.pdf
-├── data.json
-└── filled.pdf
+├── template_8field.pdf
+└── template_signed.pdf
 
 tests/
-└── sign_api.rs
+├── form_fields.rs
+├── foxit_reference.rs
+├── piece_info_security_test.rs
+├── sign_api.rs
+└── validation.rs
 ~~~
 
 ## Design principles

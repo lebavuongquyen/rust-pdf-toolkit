@@ -108,6 +108,15 @@ mod wasm {
             Ok(self)
         }
 
+        pub fn locked_piece_info(
+            self,
+            _app_name: impl Into<String>,
+            _data: serde_json::Value,
+            _secret_key: impl Into<String>,
+        ) -> Self {
+            self
+        }
+
         pub fn design(self, _design: crate::appearance::SignatureDesign) -> Self {
             self
         }

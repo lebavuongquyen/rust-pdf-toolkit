@@ -178,6 +178,7 @@ pub struct PdfSigner {
     flatten: bool,
     appearance: Option<crate::appearance::SignatureAppearanceOptions>,
     piece_info: Option<serde_json::Value>,
+    locked_piece_info: Option<crate::LockedPieceInfoConfig>,
 }
 
 impl PdfSigner {
@@ -192,6 +193,7 @@ impl PdfSigner {
             flatten: false,
             appearance: None,
             piece_info: None,
+            locked_piece_info: None,
         }
     }
 
@@ -216,6 +218,20 @@ impl PdfSigner {
         })?;
         self.piece_info = Some(value);
         Ok(self)
+    }
+
+    pub fn locked_piece_info(
+        mut self,
+        app_name: impl Into<String>,
+        data: serde_json::Value,
+        secret_key: impl Into<String>,
+    ) -> Self {
+        self.locked_piece_info = Some(crate::LockedPieceInfoConfig {
+            app_name: app_name.into(),
+            data,
+            secret_key: secret_key.into(),
+        });
+        self
     }
 
     pub fn appearance(mut self, options: crate::appearance::SignatureAppearanceOptions) -> Self {
@@ -303,7 +319,7 @@ impl PdfSigner {
         }
 
         let mut base_pdf = pdf.to_vec();
-        if self.flatten || self.appearance.is_some() || self.piece_info.is_some() {
+        if self.flatten || self.appearance.is_some() || self.piece_info.is_some() || self.locked_piece_info.is_some() {
             let mut doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
             if self.flatten {
                 crate::flatten_form_fields(&mut doc, true)
@@ -312,6 +328,15 @@ impl PdfSigner {
             if let Some(ref p_info) = self.piece_info {
                 crate::insert_piece_info(&mut doc, p_info)
                     .map_err(SignError::SigningFailed)?;
+            }
+            if let Some(ref locked) = self.locked_piece_info {
+                crate::insert_locked_piece_info(
+                    &mut doc,
+                    &locked.app_name,
+                    &locked.data,
+                    &locked.secret_key,
+                )
+                .map_err(SignError::SigningFailed)?;
             }
             if let Some(app_opts) = &self.appearance {
                 let fields = crate::collect_fields(&doc);
@@ -500,6 +525,7 @@ impl PdfSigner {
             &crate::FillOptions {
                 flatten: false,
                 piece_info: self.piece_info.clone(),
+                locked_piece_info: self.locked_piece_info.clone(),
             },
         )
         .map_err(|e| SignError::InvalidConfiguration(format!("Fill step failed: {e}")))?;

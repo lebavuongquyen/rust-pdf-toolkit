@@ -13,10 +13,15 @@ mod appearance_parser;
 mod appearance_renderer;
 mod field_strategy;
 mod sign;
+mod piece_info_security;
 
 pub use appearance::{
     GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureDesign, SignatureFont,
     SignatureLabels, SignatureTextLine, TextAlign,
+};
+pub use piece_info_security::{
+    compute_doc_fingerprint, insert_locked_piece_info, verify_and_unlock_piece_info,
+    PieceInfoUnlockResult, PieceInfoUnlockStatus,
 };
 pub use sign::{
     fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
@@ -24,11 +29,20 @@ pub use sign::{
 };
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct LockedPieceInfoConfig {
+    pub app_name: String,
+    pub data: Value,
+    pub secret_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct FillOptions {
     #[serde(default)]
     pub flatten: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub piece_info: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locked_piece_info: Option<LockedPieceInfoConfig>,
 }
 
 impl FillOptions {
@@ -43,6 +57,20 @@ impl FillOptions {
 
     pub fn piece_info(mut self, piece_info: Value) -> Self {
         self.piece_info = Some(piece_info);
+        self
+    }
+
+    pub fn locked_piece_info(
+        mut self,
+        app_name: impl Into<String>,
+        data: Value,
+        secret_key: impl Into<String>,
+    ) -> Self {
+        self.locked_piece_info = Some(LockedPieceInfoConfig {
+            app_name: app_name.into(),
+            data,
+            secret_key: secret_key.into(),
+        });
         self
     }
 }
@@ -2066,6 +2094,7 @@ pub fn fill_pdf(
         &FillOptions {
             flatten: false,
             piece_info: piece_info_val,
+            locked_piece_info: None,
         },
     )
 }
@@ -2148,6 +2177,15 @@ pub fn fill_pdf_with_options(
 
     if let Some(ref p_info) = options.piece_info {
         insert_piece_info(&mut doc, p_info)?;
+    }
+
+    if let Some(ref locked) = options.locked_piece_info {
+        piece_info_security::insert_locked_piece_info(
+            &mut doc,
+            &locked.app_name,
+            &locked.data,
+            &locked.secret_key,
+        )?;
     }
 
     let output = save_document(&mut doc)?;
