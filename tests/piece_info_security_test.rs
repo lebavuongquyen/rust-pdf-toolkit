@@ -143,3 +143,29 @@ fn test_locked_piece_info_with_pdf_signer() {
     assert_eq!(extracted["audit_event"], "DIGITAL_SIGNATURE_APPLIED");
     assert_eq!(extracted["signer_ip"], "14.161.20.55");
 }
+
+#[test]
+fn test_fill_pdf_with_locked_json_parameter() {
+    let template = fs::read("reference/template.pdf").expect("template.pdf");
+    let secret = "DynamicPass123";
+    let app_name = "QuickLock";
+
+    let piece_info_with_lock = serde_json::json!({
+        "__locked": {
+            "app_name": app_name,
+            "data": { "session_id": "sess_abc_123" },
+            "secret_key": secret
+        }
+    })
+    .to_string();
+
+    let (filled_pdf, report) =
+        pdffiller_core::fill_pdf(&template, r#"{"name":"Test User"}"#, Some(&piece_info_with_lock))
+            .expect("fill_pdf with __locked");
+    assert_eq!(report.filled_count(), 1);
+
+    let verify_res = verify_and_unlock_piece_info(&filled_pdf, app_name, secret).expect("verify");
+    assert_eq!(verify_res.status, PieceInfoUnlockStatus::Valid);
+    let data = verify_res.data.unwrap();
+    assert_eq!(data["session_id"], "sess_abc_123");
+}

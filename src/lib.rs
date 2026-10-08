@@ -2082,19 +2082,36 @@ pub fn fill_pdf(
     json: &str,
     piece_info: Option<&str>,
 ) -> Result<(Vec<u8>, FillReport), String> {
-    let piece_info_val = match piece_info {
-        Some(s) if !s.trim().is_empty() => {
-            Some(serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?)
+    let mut piece_info_val = None;
+    let mut locked_piece_info_val = None;
+    if let Some(s) = piece_info {
+        if !s.trim().is_empty() {
+            let val: serde_json::Value =
+                serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?;
+            if let Some(locked_obj) = val.get("__locked") {
+                if let (Some(app), Some(data), Some(sec)) = (
+                    locked_obj.get("app_name").and_then(|v| v.as_str()),
+                    locked_obj.get("data"),
+                    locked_obj.get("secret_key").and_then(|v| v.as_str()),
+                ) {
+                    locked_piece_info_val = Some(LockedPieceInfoConfig {
+                        app_name: app.to_string(),
+                        data: data.clone(),
+                        secret_key: sec.to_string(),
+                    });
+                }
+            } else {
+                piece_info_val = Some(val);
+            }
         }
-        _ => None,
-    };
+    }
     fill_pdf_with_options(
         template,
         json,
         &FillOptions {
             flatten: false,
             piece_info: piece_info_val,
-            locked_piece_info: None,
+            locked_piece_info: locked_piece_info_val,
         },
     )
 }

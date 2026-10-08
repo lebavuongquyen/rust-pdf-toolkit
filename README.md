@@ -872,6 +872,16 @@ cargo build --target wasm32-unknown-unknown --release
 
 Digital signing is intentionally native-only at this stage. Browser signing should eventually use an external signer or WebCrypto/HSM/remote signing boundary.
 
+### WASM JavaScript / TypeScript API:
+- `get_form_fields_result(template: &[u8])`: Discovers all form fields as JSON.
+- `fill_pdf_bytes(template, json, piece_info?)`: Returns filled PDF bytes (`Uint8Array`).
+- `fill_pdf_base64(template, json, piece_info?)`: Returns Base64 string.
+- `fill_pdf_result(template, json, piece_info?)`: Returns `FillReport` as JSON.
+- `get_piece_info_result(template)`: Extracts `/PieceInfo` metadata JSON.
+- `lock_pdf_piece_info(template, app_name, data_json, secret_key)`: Seals and encrypts data into `/PieceInfo` using AES-256-GCM + HMAC-SHA256, returning encrypted PDF bytes.
+- `verify_and_unlock_piece_info_result(template, app_name, secret_key)`: Verifies integrity, anti-transplant binding, and decrypts locked `/PieceInfo`.
+- `validate_pdf_result(template, json)`: Validates form input against field schemas.
+
 ## CLI
 
 The current CLI focuses on filling:

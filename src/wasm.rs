@@ -81,3 +81,23 @@ pub fn verify_and_unlock_piece_info_result(
     })
     .to_string())
 }
+
+#[wasm_bindgen]
+pub fn lock_pdf_piece_info(
+    template: &[u8],
+    app_name: &str,
+    data_json: &str,
+    secret_key: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let mut doc = lopdf::Document::load_mem(template)
+        .map_err(|e| JsValue::from_str(&format!("PDF load failed: {e}")))?;
+    let val: serde_json::Value = serde_json::from_str(data_json)
+        .map_err(|e| JsValue::from_str(&format!("Invalid data JSON: {e}")))?;
+    crate::insert_locked_piece_info(&mut doc, app_name, &val, secret_key)
+        .map_err(|e| JsValue::from_str(&e))?;
+    let mut out = Vec::new();
+    doc.save_to(&mut out)
+        .map_err(|e| JsValue::from_str(&format!("PDF save failed: {e}")))?;
+    Ok(out)
+}
+
