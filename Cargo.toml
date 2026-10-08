@@ -1,3 +1,8 @@
+[package]
+name = "pdffiller"
+version = "0.2.0"
+edition = "2024"
+
 [lib]
 name = "pdffiller_core"
 crate-type = ["rlib", "cdylib"]
@@ -16,6 +21,7 @@ getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rsa = { version = "0.9.10", features = ["sha2"] }
+p384 = { version = "0.13.1", features = ["ecdsa", "pkcs8"] }
 sha2 = "0.10.9"
 signature = "2.2.0"
 time = { version = "0.3.55", features = ["formatting"] }

@@ -3,7 +3,11 @@ use lopdf::Document;
 pub struct PdfAppearance;
 
 impl PdfAppearance {
-    pub fn set_signature_image(template: &[u8], field_name: &str, image: &str) -> Result<Vec<u8>, String> {
+    pub fn set_signature_image(
+        template: &[u8],
+        field_name: &str,
+        image: &str,
+    ) -> Result<Vec<u8>, String> {
         let mut doc = Document::load_mem(template).map_err(|e| format!("PDF load failed: {e}"))?;
         let fields = super::collect_fields(&doc);
         let Some((field_id, field, field_type)) = fields.get(field_name) else {
@@ -19,5 +23,3 @@ impl PdfAppearance {
         super::save_document(&mut doc)
     }
 }
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]

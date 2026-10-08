@@ -1,9 +1,19 @@
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{CertificateSigner, PdfSigner, SignError, Signer};
+#[path = "sign_native.rs"]
+mod native;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use std::fmt;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CmsSignatureMode {
+        SignedAttributesRsaPkcs1Sha256,
+        DirectEcdsaSha256,
+    }
 
     pub trait Signer: Send + Sync {}
 
@@ -25,6 +35,19 @@ mod wasm {
     pub struct CertificateSigner;
 
     impl CertificateSigner {
+        pub fn from_pkcs8_der(
+            _certificate_der: impl Into<Vec<u8>>,
+            _private_key_der: &[u8],
+        ) -> Result<Self, SignError> {
+            Err(SignError::NotImplemented(
+                "Digital signing is native-only at this stage".into(),
+            ))
+        }
+    }
+
+    pub struct EcdsaSigner;
+
+    impl EcdsaSigner {
         pub fn from_pkcs8_der(
             _certificate_der: impl Into<Vec<u8>>,
             _private_key_der: &[u8],
@@ -57,4 +80,4 @@ mod wasm {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{CertificateSigner, PdfSigner, SignError, Signer};
+pub use wasm::{CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer};

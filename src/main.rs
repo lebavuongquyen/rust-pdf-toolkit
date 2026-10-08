@@ -15,5 +15,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Output: {}", args[3]);
     Ok(())
 }
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]

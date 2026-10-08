@@ -1,3 +1,5 @@
+# rust-pdffiller
+
 Rust PDF form filling and digital signing library with a WASM-compatible filling core.
 
 ## Features
@@ -136,7 +138,9 @@ let signed = PdfSigner::new()
 std::fs::write("signed.pdf", signed)?;
 ~~~
 
-The current native signer accepts RSA PKCS#8 DER private keys and X.509 DER certificates. PKCS#12/PFX parsing is intentionally kept outside the core signing engine for now.
+The native signing layer accepts RSA PKCS#8 DER and P-384 ECDSA PKCS#8 DER private keys with X.509 DER certificates. PKCS#12/PFX parsing is intentionally kept outside the core signing engine for now.
+
+EcdsaSigner uses SHA-256 with direct CMS signing and the id-ecPublicKey signature algorithm shape used by the Foxit reference PDF in reference/template_signed.pdf. CertificateSigner keeps the existing RSA PKCS#1 v1.5 flow with signed CMS attributes.
 
 If the requested field already exists, it must be a /Sig field. If it does not exist, the native signing backend can create the signature field during the signing revision.
 
@@ -151,6 +155,8 @@ pub trait Signer: Send + Sync {
     fn certificate_chain(&self) -> &[Vec<u8>] {
         &[]
     }
+
+    fn cms_signature_mode(&self) -> CmsSignatureMode;
 }
 ~~~
 
@@ -207,12 +213,17 @@ The final signing revision is not produced through the normal full-document save
 
 ## Current native signing support
 
-The current CertificateSigner baseline supports:
+The current native signing baseline supports:
 
 - RSA private key in PKCS#8 DER
+- P-384 ECDSA private key in PKCS#8 DER
 - X.509 certificate in DER
 - SHA-256
-- RSA PKCS#1 v1.5
+- RSA PKCS#1 v1.5 CMS signing with signed attributes
+- ECDSA SHA-256 direct CMS signing with id-ecPublicKey
+- Adobe adbe.pkcs7.detached PDF signatures
+
+The Foxit reference in reference/template_signed.pdf is treated as a golden interoperability fixture. Its ByteRange, detached CMS shape, SHA-256 digest algorithm, P-384 certificate, and direct ECDSA SignerInfo are covered by tests/foxit_reference.rs.
 
 Other algorithms and credential containers should be added through the signer abstraction rather than coupled to the PDF engine.
 

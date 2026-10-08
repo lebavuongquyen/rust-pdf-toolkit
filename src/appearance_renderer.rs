@@ -103,5 +103,3 @@ pub fn replace_appearance(field: &mut Dictionary, appearance_id: ObjectId) {
     ap.set("N", appearance_id);
     field.set("AP", ap);
 }
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]

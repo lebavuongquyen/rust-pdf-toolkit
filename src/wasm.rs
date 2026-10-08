@@ -1,10 +1,12 @@
+use crate::{fill_pdf, report_json, validate_pdf};
 use base64::Engine;
 use wasm_bindgen::prelude::*;
-use crate::{fill_pdf, report_json, validate_pdf};
 
 #[wasm_bindgen]
 pub fn fill_pdf_bytes(template: &[u8], json: &str) -> Result<Vec<u8>, JsValue> {
-    fill_pdf(template, json).map(|x| x.0).map_err(|e| JsValue::from_str(&e))
+    fill_pdf(template, json)
+        .map(|x| x.0)
+        .map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]
@@ -23,5 +25,3 @@ pub fn fill_pdf_result(template: &[u8], json: &str) -> Result<String, JsValue> {
 pub fn validate_pdf_result(template: &[u8], json: &str) -> Result<String, JsValue> {
     validate_pdf(template, json).map_err(|e| JsValue::from_str(&e))
 }
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]

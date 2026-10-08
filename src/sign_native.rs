@@ -1,9 +1,29 @@
+use ::time::{OffsetDateTime, format_description::parse_borrowed};
+use lopdf::{Dictionary, Document, IncrementalDocument, Object, ObjectId, StringFormat};
+use p384::ecdsa::SigningKey as EcdsaSigningKey;
+use rsa::RsaPrivateKey;
+use rsa::pkcs1v15::SigningKey;
+use rsa::pkcs8::DecodePrivateKey;
+use rsa::traits::PublicKeyParts;
+use sha2::{Digest, Sha256};
+use signature::{SignatureEncoding, Signer as CryptoSigner, hazmat::PrehashSigner};
+use std::fmt;
+use x509_parser::prelude::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CmsSignatureMode {
+    SignedAttributesRsaPkcs1Sha256,
+    DirectEcdsaSha256,
+}
+
 pub trait Signer: Send + Sync {
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>, SignError>;
 
     fn certificate_chain(&self) -> &[Vec<u8>] {
         &[]
     }
+
+    fn cms_signature_mode(&self) -> CmsSignatureMode;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,10 +39,14 @@ pub enum SignError {
 impl fmt::Display for SignError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidConfiguration(message) => write!(f, "Invalid signing configuration: {message}"),
+            Self::InvalidConfiguration(message) => {
+                write!(f, "Invalid signing configuration: {message}")
+            }
             Self::PdfLoadFailed(message) => write!(f, "PDF load failed: {message}"),
             Self::SignatureFieldNotFound(field) => write!(f, "Signature field '{field}' not found"),
-            Self::InvalidSignatureField(field) => write!(f, "Field '{field}' is not a signature field"),
+            Self::InvalidSignatureField(field) => {
+                write!(f, "Field '{field}' is not a signature field")
+            }
             Self::SigningFailed(message) => write!(f, "Signing failed: {message}"),
             Self::NotImplemented(message) => write!(f, "Signing is not implemented: {message}"),
         }
@@ -41,8 +65,9 @@ impl CertificateSigner {
         certificate_der: impl Into<Vec<u8>>,
         private_key_der: &[u8],
     ) -> Result<Self, SignError> {
-        let private_key = RsaPrivateKey::from_pkcs8_der(private_key_der)
-            .map_err(|e| SignError::SigningFailed(format!("Invalid PKCS#8 RSA private key: {e}")))?;
+        let private_key = RsaPrivateKey::from_pkcs8_der(private_key_der).map_err(|e| {
+            SignError::SigningFailed(format!("Invalid PKCS#8 RSA private key: {e}"))
+        })?;
         Self::from_parts(certificate_der.into(), private_key)
     }
 
@@ -51,10 +76,14 @@ impl CertificateSigner {
         private_key: RsaPrivateKey,
     ) -> Result<Self, SignError> {
         if certificate_der.is_empty() {
-            return Err(SignError::InvalidConfiguration("certificate is required".into()));
+            return Err(SignError::InvalidConfiguration(
+                "certificate is required".into(),
+            ));
         }
         if private_key.n().bits() < 2048 {
-            return Err(SignError::InvalidConfiguration("RSA key must be at least 2048 bits".into()));
+            return Err(SignError::InvalidConfiguration(
+                "RSA key must be at least 2048 bits".into(),
+            ));
         }
         parse_certificate(&certificate_der)?;
         Ok(Self {
@@ -76,6 +105,66 @@ impl Signer for CertificateSigner {
 
     fn certificate_chain(&self) -> &[Vec<u8>] {
         &self.certificates
+    }
+
+    fn cms_signature_mode(&self) -> CmsSignatureMode {
+        CmsSignatureMode::SignedAttributesRsaPkcs1Sha256
+    }
+}
+
+pub struct EcdsaSigner {
+    private_key: EcdsaSigningKey,
+    certificates: Vec<Vec<u8>>,
+}
+
+impl EcdsaSigner {
+    pub fn from_pkcs8_der(
+        certificate_der: impl Into<Vec<u8>>,
+        private_key_der: &[u8],
+    ) -> Result<Self, SignError> {
+        let private_key = EcdsaSigningKey::from_pkcs8_der(private_key_der).map_err(|e| {
+            SignError::SigningFailed(format!("Invalid PKCS#8 P-384 private key: {e}"))
+        })?;
+        Self::from_parts(certificate_der.into(), private_key)
+    }
+
+    pub fn from_parts(
+        certificate_der: Vec<u8>,
+        private_key: EcdsaSigningKey,
+    ) -> Result<Self, SignError> {
+        if certificate_der.is_empty() {
+            return Err(SignError::InvalidConfiguration(
+                "certificate is required".into(),
+            ));
+        }
+        parse_ecdsa_certificate(&certificate_der)?;
+        Ok(Self {
+            private_key,
+            certificates: vec![certificate_der],
+        })
+    }
+
+    pub fn certificate_der(&self) -> &[u8] {
+        &self.certificates[0]
+    }
+}
+
+impl Signer for EcdsaSigner {
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, SignError> {
+        let digest = Sha256::digest(data);
+        let signature: p384::ecdsa::Signature = self
+            .private_key
+            .sign_prehash(&digest)
+            .map_err(|e| SignError::SigningFailed(format!("ECDSA signing failed: {e}")))?;
+        Ok(signature.to_der().as_bytes().to_vec())
+    }
+
+    fn certificate_chain(&self) -> &[Vec<u8>] {
+        &self.certificates
+    }
+
+    fn cms_signature_mode(&self) -> CmsSignatureMode {
+        CmsSignatureMode::DirectEcdsaSha256
     }
 }
 
@@ -134,12 +223,14 @@ impl PdfSigner {
     }
 
     pub fn sign(&self, pdf: &[u8]) -> Result<Vec<u8>, SignError> {
-        let field_name = self.field.as_deref().ok_or_else(|| {
-            SignError::InvalidConfiguration("signature field is required".into())
-        })?;
-        let signer = self.signer.as_ref().ok_or_else(|| {
-            SignError::InvalidConfiguration("signer is required".into())
-        })?;
+        let field_name = self
+            .field
+            .as_deref()
+            .ok_or_else(|| SignError::InvalidConfiguration("signature field is required".into()))?;
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| SignError::InvalidConfiguration("signer is required".into()))?;
 
         if signer.certificate_chain().is_empty() {
             return Err(SignError::InvalidConfiguration(
@@ -147,8 +238,7 @@ impl PdfSigner {
             ));
         }
 
-        let doc = Document::load_mem(pdf)
-            .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+        let doc = Document::load_mem(pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
         let fields = crate::collect_fields(&doc);
         let Some((field_id, _field, field_type)) = fields.get(field_name) else {
             return Err(SignError::SignatureFieldNotFound(field_name.into()));
@@ -169,7 +259,7 @@ impl PdfSigner {
         let mut signature = Dictionary::new();
         signature.set("Type", "Sig");
         signature.set("Filter", "Adobe.PPKLite");
-        signature.set("SubFilter", "ETSI.CAdES.detached");
+        signature.set("SubFilter", "adbe.pkcs7.detached");
         signature.set(
             "ByteRange",
             Object::Array(vec![
@@ -179,7 +269,10 @@ impl PdfSigner {
                 Object::Integer(i64::MAX),
             ]),
         );
-        signature.set("Contents", Object::String(placeholder, StringFormat::Hexadecimal));
+        signature.set(
+            "Contents",
+            Object::String(placeholder, StringFormat::Hexadecimal),
+        );
         if let Some(reason) = &self.reason {
             signature.set("Reason", pdf_text(reason));
         }
@@ -212,8 +305,9 @@ impl PdfSigner {
 
         let contents_marker = "AA".repeat(contents_len);
         let marker = contents_marker.as_bytes();
-        let contents_hex_start = find_unique(&unsigned, marker)
-            .ok_or_else(|| SignError::SigningFailed("signature contents placeholder not found".into()))?;
+        let contents_hex_start = find_unique(&unsigned, marker).ok_or_else(|| {
+            SignError::SigningFailed("signature contents placeholder not found".into())
+        })?;
         let contents_start = contents_hex_start - 1;
         let contents_end = contents_hex_start + marker.len() + 1;
 
@@ -229,16 +323,25 @@ impl PdfSigner {
         replace_ascii_integer(&mut output, i64::MAX, byte_range[2] as i64)?;
         replace_ascii_integer(&mut output, i64::MAX, byte_range[3] as i64)?;
 
-        let digest_input = [&output[..byte_range[1]], &output[byte_range[2]..]]
-            .concat();
+        let digest_input = [&output[..byte_range[1]], &output[byte_range[2]..]].concat();
         let digest = Sha256::digest(&digest_input);
 
-        let signed_attributes = build_signed_attributes(&digest)?;
-        let signature_value = signer.sign(&signed_attributes)?;
+        let (signed_attributes, signature_value) = match signer.cms_signature_mode() {
+            CmsSignatureMode::SignedAttributesRsaPkcs1Sha256 => {
+                let signed_attributes = build_signed_attributes(&digest)?;
+                let signature_value = signer.sign(&signed_attributes)?;
+                (Some(signed_attributes), signature_value)
+            }
+            CmsSignatureMode::DirectEcdsaSha256 => {
+                let signature_value = signer.sign(&digest_input)?;
+                (None, signature_value)
+            }
+        };
         let cms = build_cms(
-            &signed_attributes,
+            signed_attributes.as_deref(),
             &signature_value,
             signer.certificate_chain(),
+            signer.cms_signature_mode(),
         )?;
 
         if cms.len() > contents_len {
@@ -264,10 +367,39 @@ impl Default for PdfSigner {
     }
 }
 
+fn parse_ecdsa_certificate(data: &[u8]) -> Result<(), SignError> {
+    let (_, cert) = X509Certificate::from_der(data)
+        .map_err(|e| SignError::SigningFailed(format!("Invalid X.509 certificate: {e}")))?;
+    let algorithm = &cert.tbs_certificate.subject_pki.algorithm;
+    if algorithm.algorithm.to_id_string() != "1.2.840.10045.2.1" {
+        return Err(SignError::InvalidConfiguration(
+            "ECDSA signer requires an id-ecPublicKey certificate".into(),
+        ));
+    }
+    let Some(parameters) = &algorithm.parameters else {
+        return Err(SignError::InvalidConfiguration(
+            "ECDSA certificate is missing its curve parameters".into(),
+        ));
+    };
+    if parameters.as_bytes() != [0x2B, 0x81, 0x04, 0x00, 0x22] {
+        return Err(SignError::InvalidConfiguration(
+            "ECDSA signer currently requires the P-384 curve".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn parse_certificate(data: &[u8]) -> Result<(), SignError> {
     let (_, cert) = X509Certificate::from_der(data)
         .map_err(|e| SignError::SigningFailed(format!("Invalid X.509 certificate: {e}")))?;
-    if cert.tbs_certificate.subject_pki.algorithm.algorithm.to_id_string() != "1.2.840.113549.1.1.1" {
+    if cert
+        .tbs_certificate
+        .subject_pki
+        .algorithm
+        .algorithm
+        .to_id_string()
+        != "1.2.840.113549.1.1.1"
+    {
         return Err(SignError::NotImplemented(
             "Only RSA certificates are currently supported".into(),
         ));
@@ -291,7 +423,10 @@ fn pdf_text(value: &str) -> Object {
 fn find_unique(data: &[u8], needle: &[u8]) -> Option<usize> {
     let mut found = None;
     let mut start = 0;
-    while let Some(relative) = data[start..].windows(needle.len()).position(|w| w == needle) {
+    while let Some(relative) = data[start..]
+        .windows(needle.len())
+        .position(|w| w == needle)
+    {
         let pos = start + relative;
         if found.is_some() {
             return None;
@@ -306,10 +441,14 @@ fn replace_ascii_integer(data: &mut [u8], old: i64, new: i64) -> Result<(), Sign
     let old_text = old.to_string();
     let new_text = new.to_string();
     if new_text.len() > old_text.len() {
-        return Err(SignError::SigningFailed("ByteRange value exceeds placeholder width".into()));
+        return Err(SignError::SigningFailed(
+            "ByteRange value exceeds placeholder width".into(),
+        ));
     }
     let needle = old_text.as_bytes();
-    let pos = data.windows(needle.len()).position(|w| w == needle)
+    let pos = data
+        .windows(needle.len())
+        .position(|w| w == needle)
         .ok_or_else(|| SignError::SigningFailed("ByteRange placeholder not found".into()))?;
     let mut replacement = vec![b'0'; needle.len()];
     let start = replacement.len() - new_text.len();
@@ -333,7 +472,10 @@ fn der_len(len: usize) -> Vec<u8> {
         return vec![len as u8];
     }
     let bytes = len.to_be_bytes();
-    let first = bytes.iter().position(|b| *b != 0).unwrap_or(bytes.len() - 1);
+    let first = bytes
+        .iter()
+        .position(|b| *b != 0)
+        .unwrap_or(bytes.len() - 1);
     let body = &bytes[first..];
     let mut out = vec![0x80 | body.len() as u8];
     out.extend_from_slice(body);
@@ -401,9 +543,11 @@ fn build_signed_attributes(digest: &[u8]) -> Result<Vec<u8>, SignError> {
         der_oid(&[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01]),
     );
     let signing_time = OffsetDateTime::now_utc()
-        .format(&parse_borrowed::<3>("[year][month][day][hour][minute][second]Z").map_err(|e| {
-            SignError::SigningFailed(format!("Signing time format failed: {e}"))
-        })?)
+        .format(
+            &parse_borrowed::<3>("[year][month][day][hour][minute][second]Z").map_err(|e| {
+                SignError::SigningFailed(format!("Signing time format failed: {e}"))
+            })?,
+        )
         .map_err(|e| SignError::SigningFailed(format!("Signing time generation failed: {e}")))?;
     let signing_time = attribute(
         &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x05],
@@ -417,9 +561,10 @@ fn build_signed_attributes(digest: &[u8]) -> Result<Vec<u8>, SignError> {
 }
 
 fn build_cms(
-    signed_attributes_set: &[u8],
+    signed_attributes_set: Option<&[u8]>,
     signature: &[u8],
     certificates: &[Vec<u8>],
+    mode: CmsSignatureMode,
 ) -> Result<Vec<u8>, SignError> {
     let cert = certificates.first().ok_or_else(|| {
         SignError::InvalidConfiguration("at least one certificate is required".into())
@@ -431,28 +576,35 @@ fn build_cms(
         der_oid(&[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01]),
         der_null(),
     ]);
-    let signature_algorithm = der_sequence(&[
-        der_oid(&[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]),
-        der_null(),
-    ]);
+    let signature_algorithm = match mode {
+        CmsSignatureMode::SignedAttributesRsaPkcs1Sha256 => der_sequence(&[
+            der_oid(&[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]),
+            der_null(),
+        ]),
+        CmsSignatureMode::DirectEcdsaSha256 => der_sequence(&[
+            der_oid(&[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01]),
+            der_null(),
+        ]),
+    };
 
     let issuer_and_serial = der_sequence(&[
         x509.tbs_certificate.issuer.as_raw().to_vec(),
         der_integer(x509.tbs_certificate.raw_serial()),
     ]);
 
-    let signer_info = der_sequence(&[
+    let mut signer_info_parts = vec![
         vec![0x02, 0x01, 0x01],
         issuer_and_serial,
         digest_algorithm.clone(),
-        {
-            let mut implicit = signed_attributes_set.to_vec();
-            implicit[0] = 0xA0;
-            implicit
-        },
-        signature_algorithm,
-        der_octet_string(signature),
-    ]);
+    ];
+    if let Some(signed_attributes_set) = signed_attributes_set {
+        let mut implicit = signed_attributes_set.to_vec();
+        implicit[0] = 0xA0;
+        signer_info_parts.push(implicit);
+    }
+    signer_info_parts.push(signature_algorithm);
+    signer_info_parts.push(der_octet_string(signature));
+    let signer_info = der_sequence(&signer_info_parts);
 
     let certificates_body = concat(
         &certificates
@@ -465,9 +617,9 @@ fn build_cms(
     let signed_data = der_sequence(&[
         vec![0x02, 0x01, 0x01],
         der_set(&[digest_algorithm]),
-        der_sequence(&[
-            der_oid(&[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01]),
-        ]),
+        der_sequence(&[der_oid(&[
+            0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01,
+        ])]),
         certificates_field,
         der_set(&[signer_info]),
     ]);

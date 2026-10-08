@@ -29,5 +29,3 @@ console.log(JSON.stringify({
   base64Length: base64.length,
   output: "output/wasm-node-filled.pdf"
 }, null, 2));
-
-[executed on device: QuyenLe (dc1d89ef-2452-4cf0-af98-88586f0bd77d)]
