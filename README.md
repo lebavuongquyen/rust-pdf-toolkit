@@ -440,10 +440,11 @@ Signed PDF
 ### Completed
 
 - AcroForm field discovery
-- Text fields
+- Exact field type classification: Text, Date, Image, Checkbox, Radio, ListBox, ComboBox, Signature, Button, Barcode
 - Buttons
 - Choice fields
 - JPEG image fields
+- Foxit template_8field.pdf discovery regression fixture
 - Field strategy registry
 - Fill report
 - Validation API

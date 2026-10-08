@@ -513,12 +513,18 @@ fn fill_one(
         .map_err(FillError::Failed)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FormFieldType {
     Text,
-    Button,
-    Choice,
+    Date,
+    Image,
+    Checkbox,
+    Radio,
+    ListBox,
+    ComboBox,
     Signature,
+    Button,
+    Barcode,
     Unknown,
 }
 
@@ -556,14 +562,83 @@ pub struct FormField {
     pub signed: Option<bool>,
 }
 
-fn field_type_name(ft: &[u8]) -> FormFieldType {
+fn field_type_name(doc: &Document, field: &Dictionary, ft: &[u8]) -> FormFieldType {
     match ft {
-        b"Tx" => FormFieldType::Text,
-        b"Btn" => FormFieldType::Button,
-        b"Ch" => FormFieldType::Choice,
         b"Sig" => FormFieldType::Signature,
+        b"Btn" => {
+            let flags = field_flags(field) as u32;
+            if field_has_image_appearance(field) {
+                FormFieldType::Image
+            } else if flags & (1 << 16) != 0 {
+                FormFieldType::Button
+            } else if flags & (1 << 15) != 0 {
+                FormFieldType::Radio
+            } else {
+                FormFieldType::Checkbox
+            }
+        }
+        b"Ch" => {
+            let flags = field_flags(field) as u32;
+            if flags & (1 << 17) != 0 {
+                FormFieldType::ComboBox
+            } else {
+                FormFieldType::ListBox
+            }
+        }
+        b"Tx" => {
+            if field.get(b"DataPrep").is_ok() {
+                FormFieldType::Barcode
+            } else if field_has_date_javascript(doc, field) {
+                FormFieldType::Date
+            } else {
+                FormFieldType::Text
+            }
+        }
         _ => FormFieldType::Unknown,
     }
+}
+
+fn field_has_image_appearance(field: &Dictionary) -> bool {
+    let Ok(Object::Dictionary(mk)) = field.get(b"MK") else {
+        return false;
+    };
+    mk.get(b"I").is_ok()
+}
+
+fn javascript_text(doc: &Document, object: &Object) -> Option<String> {
+    match object {
+        Object::String(_, _) => object_text(object),
+        Object::Reference(id) => {
+            let object = doc.get_object(*id).ok()?;
+            javascript_text(doc, object)
+        }
+        Object::Dictionary(dict) => {
+            if let Ok(js) = dict.get(b"JS") {
+                return javascript_text(doc, js);
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn field_has_date_javascript(doc: &Document, field: &Dictionary) -> bool {
+    let Ok(Object::Reference(aa_id)) = field.get(b"AA") else {
+        return false;
+    };
+    let Ok(aa) = doc.get_object(*aa_id).and_then(|x| x.as_dict()) else {
+        return false;
+    };
+    for key in [b"K".as_slice(), b"F".as_slice(), b"V".as_slice(), b"C".as_slice()] {
+        if let Ok(action) = aa.get(key) {
+            if let Some(js) = javascript_text(doc, action) {
+                if js.contains("AFDate_") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn object_id_string(id: ObjectId) -> String {
@@ -698,7 +773,7 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
             FormField {
                 id: object_id_string(definition.id),
                 name: definition.name.clone(),
-                field_type: field_type_name(&definition.field_type),
+                field_type: field_type_name(doc, &definition.field, &definition.field_type),
                 page: first.map(|x| x.page),
                 rect: first.map(|x| x.rect),
                 value: field_value(&definition.field, b"V"),
