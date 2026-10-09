@@ -385,3 +385,15 @@ pub fn extract_text_structured_wasm(
     serde_json::to_string(&report)
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
+
+#[wasm_bindgen]
+pub fn flatten_pdf_wasm(template: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let mut doc = lopdf::Document::load_mem(template)
+        .map_err(|e| JsValue::from_str(&format!("PDF load failed: {e}")))?;
+    crate::flatten_form_fields(&mut doc, true)
+        .map_err(|e| JsValue::from_str(&e))?;
+    let mut out = Vec::new();
+    doc.save_to(&mut out)
+        .map_err(|e| JsValue::from_str(&format!("PDF save failed: {e}")))?;
+    Ok(out)
+}

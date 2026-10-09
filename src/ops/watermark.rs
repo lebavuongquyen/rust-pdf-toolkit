@@ -7,11 +7,30 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// Representation of RGB color in range [0.0, 1.0].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct ColorRgb {
     pub r: f64,
     pub g: f64,
     pub b: f64,
+}
+
+impl<'de> serde::Deserialize<'de> for ColorRgb {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum ColorHelper {
+            Str(String),
+            Rgb { r: f64, g: f64, b: f64 },
+        }
+
+        match ColorHelper::deserialize(deserializer)? {
+            ColorHelper::Str(s) => ColorRgb::parse(&s).map_err(serde::de::Error::custom),
+            ColorHelper::Rgb { r, g, b } => Ok(ColorRgb::new(r, g, b)),
+        }
+    }
 }
 
 impl Default for ColorRgb {

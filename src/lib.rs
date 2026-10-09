@@ -2157,10 +2157,25 @@ pub fn fill_pdf(
 ) -> Result<(Vec<u8>, FillReport), String> {
     let mut piece_info_val = None;
     let mut locked_piece_info_val = None;
+    let mut flatten_val = false;
     if let Some(s) = piece_info {
         if !s.trim().is_empty() {
             let val: serde_json::Value =
                 serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?;
+
+            if let Some(f) = val
+                .get("flatten")
+                .and_then(|v| v.as_bool())
+                .or_else(|| val.get("__flatten").and_then(|v| v.as_bool()))
+                .or_else(|| {
+                    val.get("WasmPlayground")
+                        .and_then(|w| w.get("flatten"))
+                        .and_then(|v| v.as_bool())
+                })
+            {
+                flatten_val = f;
+            }
+
             if let Some(locked_obj) = val.get("__locked") {
                 if let (Some(app), Some(data), Some(sec)) = (
                     locked_obj.get("app_name").and_then(|v| v.as_str()),
@@ -2182,7 +2197,7 @@ pub fn fill_pdf(
         template,
         json,
         &FillOptions {
-            flatten: false,
+            flatten: flatten_val,
             piece_info: piece_info_val,
             locked_piece_info: locked_piece_info_val,
         },
