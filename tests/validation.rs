@@ -1,4 +1,4 @@
-use pdffiller_core::validate_pdf;
+use pdftoolkit_core::validate_pdf;
 use std::fs;
 
 #[test]

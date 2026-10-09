@@ -4,8 +4,8 @@ mod native;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{
-    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
-    Signer,
+    CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer,
+    fill_and_sign_pdf,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -163,6 +163,6 @@ mod wasm {
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
-    Signer,
+    CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer,
+    fill_and_sign_pdf,
 };

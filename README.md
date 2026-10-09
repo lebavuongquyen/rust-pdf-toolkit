@@ -1,24 +1,19 @@
-# rust-pdffiller
+# rust-pdf-toolkit
 
-Rust PDF form filling and digital signing library with a WASM-compatible filling core.
+High-performance, pure-Rust and WASM-compatible PDF toolkit for form filling, digital signing, document merging, splitting, rasterizing to images, and multi-threaded batch folder processing.
 
-## Features
+## Key Capabilities
 
-- Fill AcroForm text fields (/Tx).
-- Fill checkbox and radio button fields (/Btn).
-- Fill choice fields (/Ch).
-- Fill JPEG image fields.
-- Discover all AcroForm fields, including signature fields, with page and widget metadata.
-- Return a structured fill report for missing, invalid, unsupported, and failed fields.
-- Validate input without modifying the PDF.
-- Render a visual signature image separately from cryptographic signing.
-- Digital signing through a separate PdfSigner API.
-- Unified fill-and-sign API (`fill_and_sign_pdf`) for one-shot form filling and digital signing.
-- Native signing uses incremental PDF updates.
-- Pluggable signer abstraction for future software, remote, HSM, KMS, and cloud signing backends.
-- WASM build remains available for the filling pipeline; digital signing is native-only at this stage.
-- ISO 32000-1 §14.5 `/PieceInfo` application metadata injection and extraction.
-- **Stealth Cryptographic Lock**: AES-256-GCM encryption, document binding fingerprint (anti-transplant), and HMAC-SHA256 tamper verification with zero visual artifacts and zero antivirus warnings.
+- **Form Filling & Validation**: Fill text (/Tx), buttons/checkboxes (/Btn), choices (/Ch), and JPEG images with detailed fill reports and flattening.
+- **Merge PDF**: High-speed merging of multiple PDF files into a single document (pure Rust, available on both Native & WASM).
+- **Split PDF**: Split PDF by page ranges (`all`, `1-3, 4-5`, `1, 3`) into clean standalone sub-documents (Native & WASM).
+- **Convert to Image (Render)**: High-fidelity PDF page rasterization to PNG/JPEG with configurable DPI powered by Google PDFium.
+- **Extract Embedded Images**: Extract raw embedded photos, logos, barcode rasters, and signatures directly from PDF XObjects with size filters and deduplication (Native & WASM).
+- **Batch Folder Processing**: Parallel multi-core scanning and processing of entire folders (`batch fill`, `batch merge`, `batch split`, `batch to-image`, `batch extract-images`) powered by Rayon.
+- **Digital Signing**: Incremental PDF signing with RSA and ECDSA P-384, compatible with Foxit and Adobe Acrobat.
+- **Stealth Cryptographic Lock**: AES-256-GCM encryption, document binding fingerprint (anti-transplant), and HMAC-SHA256 tamper verification using ISO 32000-1 `/PieceInfo`.
+- **Dual-target Ready**: Full native CLI & server performance, plus WebAssembly (`wasm32-unknown-unknown`) package for direct browser execution.
+
 
 ## Architecture
 
@@ -76,7 +71,7 @@ This keeps inherited names, field types, widgets, pages, and signature-field det
 ## Filling
 
 ~~~rust
-use pdffiller_core::fill_pdf;
+use pdftoolkit_core::fill_pdf;
 
 let template = std::fs::read("template.pdf")?;
 let json = std::fs::read_to_string("data.json")?;
@@ -85,7 +80,7 @@ let piece_info = Some(r#"{"MyApp": {"doc_id": "DOC-12345", "version": 1}}"#);
 let (pdf, report) = fill_pdf(&template, &json, piece_info)?;
 
 std::fs::write("filled.pdf", pdf)?;
-println!("{}", pdffiller_core::report_json(&report));
+println!("{}", pdftoolkit_core::report_json(&report));
 ~~~
 
 Example input:
@@ -114,7 +109,7 @@ A bad individual field does not have to abort the entire fill operation.
 You can attach application-specific metadata into the PDF Document Catalog (`/Root /PieceInfo` compliant with ISO 32000-1 §14.5). If `piece_info` is `None`, the catalog is left unmodified:
 
 ~~~rust
-use pdffiller_core::{fill_pdf_with_options, get_piece_info, FillOptions};
+use pdftoolkit_core::{fill_pdf_with_options, get_piece_info, FillOptions};
 
 let options = FillOptions {
     flatten: true, // Flattens text, choices, buttons, images into static page graphics
@@ -140,7 +135,7 @@ let metadata: Option<serde_json::Value> = get_piece_info(&pdf)?;
 When saving sensitive private application data (e.g., transaction ID, audit trace, CIF, signer IP) into `/PieceInfo`, you can cryptographically seal and encrypt it using a **Secret Key**:
 
 ~~~rust
-use pdffiller_core::{
+use pdftoolkit_core::{
     insert_locked_piece_info, verify_and_unlock_piece_info, FillOptions, PieceInfoUnlockStatus,
 };
 
@@ -159,7 +154,7 @@ let options = FillOptions::new()
     .flatten(true)
     .locked_piece_info(app_name, private_data, secret_key);
 
-let (pdf_bytes, report) = pdffiller_core::fill_pdf_with_options(&template, &json, &options)?;
+let (pdf_bytes, report) = pdftoolkit_core::fill_pdf_with_options(&template, &json, &options)?;
 
 // 2. Unlock and verify integrity later:
 let result = verify_and_unlock_piece_info(&pdf_bytes, app_name, secret_key)?;
@@ -199,7 +194,7 @@ match result.status {
 The field discovery API scans every AcroForm field, resolving widget annotations, page locations, inherited attributes, exact types, and existing values. Signature fields are discovered with full cryptographic and visual appearance metadata.
 
 ~~~rust
-use pdffiller_core::{get_form_fields, FormFieldType};
+use pdftoolkit_core::{get_form_fields, FormFieldType};
 
 let template = std::fs::read("template.pdf")?;
 let fields = get_form_fields(&template)?;
@@ -365,7 +360,7 @@ The WASM API exposes the same metadata through `get_form_fields_result(template)
 Validation does not modify the PDF.
 
 ~~~rust
-use pdffiller_core::validate_pdf;
+use pdftoolkit_core::validate_pdf;
 
 let template = std::fs::read("template.pdf")?;
 let json = std::fs::read_to_string("data.json")?;
@@ -381,7 +376,7 @@ Digital signature fields are deliberately excluded from normal filling. Use PdfS
 `PdfAppearance` allows rendering a standalone signature appearance with flexible layout options matching standard PDF editors (Foxit, Adobe Acrobat):
 
 ~~~rust
-use pdffiller_core::{
+use pdftoolkit_core::{
     GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureFont, TextAlign,
 };
 
@@ -425,7 +420,7 @@ Digital signing is a separate API producing standard cryptographic PKCS#7 / CMS 
 `PdfSigner` supports automatic document flattening and visual appearance injection:
 
 ~~~rust
-use pdffiller_core::{
+use pdftoolkit_core::{
     CertificateSigner, GraphicPosition, PdfSigner, SignatureAppearanceOptions, SignatureFont,
 };
 
@@ -481,14 +476,14 @@ PdfSigner::validate() resolves the requested field through the same shared field
 
 In many automated document workflows, an application needs to populate dynamic customer data into form fields, optionally flatten non-signature form fields into static page content, render a visual signature appearance, and cryptographically seal the document with a digital certificate in a single operation.
 
-`rust-pdffiller` provides a unified entry point:
+`rust-pdf-toolkit` provides a unified entry point:
 - `fill_and_sign_pdf(template: &[u8], json_data: &str, signer: &PdfSigner) -> Result<(Vec<u8>, FillReport), SignError>`
 - `PdfSigner::fill_and_sign(&self, template: &[u8], json_data: &str) -> Result<(Vec<u8>, FillReport), SignError>`
 
 ### Example Usage
 
 ```rust
-use pdffiller_core::{
+use pdftoolkit_core::{
     fill_and_sign_pdf, CertificateSigner, GraphicPosition, PdfSigner,
     SignatureAppearanceOptions, SignatureFont, TextAlign,
 };
@@ -554,12 +549,12 @@ std::fs::write("contract_executed.pdf", signed_pdf)?;
 
 ### Signature Design Extraction & Round-Trip Re-Injection
 
-`rust-pdffiller` supports **two-way round-trip signature design processing**:
+`rust-pdf-toolkit` supports **two-way round-trip signature design processing**:
 1. **Extraction**: When reading a signed PDF, `get_form_fields()` parses the `/AP /N` Form XObject content stream to extract the exact `SignatureDesign` containing every text line's position `(x, y)`, font size, color, and `image_bounds`.
 2. **Re-Injection when Signing**: You can pass this `SignatureDesign` directly into `PdfSigner::new().design(design)` to replicate the exact visual layout on a new document, or customize individual text lines and coordinates freely.
 
 ```rust
-use pdffiller_core::{get_form_fields, PdfSigner, CertificateSigner, SignatureDesign, SignatureTextLine, GraphicPosition};
+use pdftoolkit_core::{get_form_fields, PdfSigner, CertificateSigner, SignatureDesign, SignatureTextLine, GraphicPosition};
 
 // 1. Extract design from a signed reference PDF
 let sample_pdf = std::fs::read("reference/template_signed.pdf")?;
@@ -687,7 +682,7 @@ A digital signature must sign the file, but the signature itself lives inside th
 
 ### 4. CMS / PKCS#7 Cryptographic SignedData Structure
 
-`rust-pdffiller` constructs standard ASN.1 DER CMS structures (`adbe.pkcs7.detached` / RFC 5652):
+`rust-pdf-toolkit` constructs standard ASN.1 DER CMS structures (`adbe.pkcs7.detached` / RFC 5652):
 
 ```text
 ContentInfo (1.2.840.113549.1.7.2 - signedData)
@@ -777,7 +772,7 @@ Delete from /AcroForm /Fields     ▼                 ▼
    - `Ff 1`: Sets the field flag to **ReadOnly**, instructing all conforming viewers not to allow modifying the field value.
    - `F 65`: Sets annotation flags to **Print** (bit 1) and **Locked** (bit 7), preventing viewers from moving or deleting the widget.
    - `/Lock << /Type /SigFieldLock /Action /All >>`: Implements the ISO 32000-1 signature field lock dictionary, cryptographically signaling to Adobe Acrobat and Foxit Reader that the entire form is sealed upon signing.
-3. **Preservation of Subsequent Signatures**: Unlike naive PDF flatteners that destroy all form fields, `rust-pdffiller` inspects every field. Any unsigned signature field (`/FT /Sig` without `/V`) is preserved in `/AcroForm /Fields` so that subsequent parties can sign the document.
+3. **Preservation of Subsequent Signatures**: Unlike naive PDF flatteners that destroy all form fields, `rust-pdf-toolkit` inspects every field. Any unsigned signature field (`/FT /Sig` without `/V`) is preserved in `/AcroForm /Fields` so that subsequent parties can sign the document.
 
 ## Signer abstraction
 
@@ -879,24 +874,178 @@ Digital signing is intentionally native-only at this stage. Browser signing shou
 - `fill_pdf_result(template, json, piece_info?)`: Returns `FillReport` as JSON.
 - `get_piece_info_result(template)`: Extracts `/PieceInfo` metadata JSON.
 - `lock_pdf_piece_info(template, app_name, data_json, secret_key)`: Seals and encrypts data into `/PieceInfo` using AES-256-GCM + HMAC-SHA256, returning encrypted PDF bytes.
-- `verify_and_unlock_piece_info_result(template, app_name, secret_key)`: Verifies integrity, anti-transplant binding, and decrypts locked `/PieceInfo`.
 - `validate_pdf_result(template, json)`: Validates form input against field schemas.
+- `merge_pdfs(pdf_list)` / `merge_pdfs_with_options(pdf_list, options_json)`: Merges an array of PDF Uint8Arrays into one PDF.
+- `split_pdf_with_options(template, options_json)`: Splits a PDF into an array of `{label: string, bytes: Uint8Array}`.
+- `extract_images_from_pdf_wasm(template, options_json)`: Extracts embedded images returning array of `{page, width, height, format, fileName, bytes}`.
+- `inject_image_metadata_bytes(image_bytes, metadata_json)`: Injects PieceInfo metadata into PNG or JPEG bytes.
+- `get_image_metadata_json(image_bytes)`: Extracts embedded PieceInfo metadata JSON from PNG or JPEG.
 
 ## CLI
 
-The current CLI focuses on filling:
+The `pdftoolkit` CLI provides commands for single-file operations as well as high-throughput batch folder processing with rich customization options:
 
+### 1. Form Filling
 ~~~bash
-pdffiller <template.pdf> <data.json> <output.pdf>
+# Modern subcommand:
+pdftoolkit fill -t template.pdf -d data.json -o filled.pdf [--flatten] [--piece-info piece.json]
+
+# Or backward-compatible syntax:
+pdftoolkit template.pdf data.json filled.pdf [piece.json]
 ~~~
 
-Example:
-
+### 2. Document Merging (`pdftoolkit merge`)
 ~~~bash
-pdffiller reference/template.pdf reference/data.json output/filled.pdf
+# Merge specific files in order:
+pdftoolkit merge -i part1.pdf part2.pdf part3.pdf -o merged.pdf
+
+# Merge directory with bookmarks, initial view mode, and PieceInfo injection:
+pdftoolkit merge --dir ./contracts -o merged.pdf \
+    --bookmarks \
+    --page-mode outlines \
+    --flatten \
+    --piece-info piece.json
 ~~~
 
-The library API is preferred for applications that need signing, validation, streaming, or custom signer implementations.
+### 3. Document Splitting (`pdftoolkit split`)
+~~~bash
+# Split every page into individual files:
+pdftoolkit split -i document.pdf -o ./output_pages/ --range all
+
+# Custom page ranges with templated naming and PieceInfo inheritance:
+pdftoolkit split -i document.pdf -o ./output_pages/ \
+    --range "1-3, 4-5" \
+    --naming-pattern "sub_{stem}_{label}.pdf" \
+    --inherit-piece-info \
+    --flatten
+~~~
+
+### 4. Convert PDF to Image (`pdftoolkit to-image`)
+~~~bash
+# Render all pages to PNG with transparent background:
+pdftoolkit to-image -i document.pdf -o ./images/ --dpi 150 --format png --transparent
+
+# High-resolution JPEG at 300 DPI with quality 90 and pixel constraints:
+pdftoolkit to-image -i document.pdf -o ./images/ \
+    --dpi 300 --format jpg --quality 90 \
+    --pages "1, 3-5" \
+    --max-width 2400 \
+    --piece-info audit.json
+
+# Note: Images automatically inherit PieceInfo metadata from the PDF (embedded into PNG tEXt or JPEG COM)!
+~~~
+
+### 5. Extract Embedded Images (`pdftoolkit extract-images`)
+~~~bash
+# Extract all embedded images (raw photos, logos, barcode rasters, signature stamps) from PDF:
+pdftoolkit extract-images -i document.pdf -o ./extracted_images/
+
+# Extract only page 1 images with minimum width/height filter and custom naming:
+pdftoolkit extract-images -i document.pdf -o ./extracted_images/ \
+    --pages "1" \
+    --min-width 100 \
+    --min-height 100 \
+    --naming-pattern "extracted_{id}_{index}.{ext}"
+~~~
+
+### 6. Multi-threaded Batch Folder Processing (`pdftoolkit batch`)
+~~~bash
+# Batch fill: Fill template PDF for an array of records in data.json
+pdftoolkit batch fill -t template.pdf -d records.json -o ./filled_folder/ --threads 8
+
+# Batch merge: Merge matching files in a folder with dry-run verification
+pdftoolkit batch merge -d ./raw_pdfs -o ./dist/all_in_one.pdf \
+    --filter "invoice_*" --bookmarks --dry-run
+
+# Batch split: Split all PDFs in a folder with pattern matching
+pdftoolkit batch split -d ./folder -o ./split_folder/ -r "1-2" --naming-pattern "{stem}_part_{label}.pdf"
+
+# Batch convert: Render matching PDFs to images concurrently
+pdftoolkit batch to-image -d ./folder -o ./gallery/ \
+    --dpi 150 --format png --transparent --filter "*report*"
+
+# Batch extract: Extract all embedded images from all PDFs in a folder
+pdftoolkit batch extract-images -d ./folder -o ./all_extracted_images/ --min-width 50
+~~~
+
+### 7. Inspection Commands
+~~~bash
+# Inspect PDF AcroForm fields:
+pdftoolkit inspect -i template.pdf
+
+# Inspect embedded PieceInfo metadata from PNG or JPEG image:
+pdftoolkit inspect-image -i rendered_page.png
+~~~
+
+## Advanced Options Reference
+
+### `MergeOptions`
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `create_bookmarks` | `bool` | `true` | Generate PDF bookmarks/outlines pointing to the first page of each merged document |
+| `page_mode` | `PageMode` | `UseOutlines` | Initial view mode (`UseOutlines`, `UseThumbs`, `FullScreen`, `UseNone`) |
+| `flatten` | `bool` | `false` | Flatten form fields before merging to prevent field name collision |
+| `piece_info` | `Option<Value>` | `None` | Custom ISO 32000-1 `/PieceInfo` metadata JSON to inject into the merged document |
+| `locked_piece_info` | `Option<LockedPieceInfoConfig>` | `None` | Stealth cryptographic AES-256-GCM locked metadata |
+
+### `SplitOptions`
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `ranges` | `String` | `"all"` | Page range specification (`"all"`, `"1-3, 4-5"`, `"1, 3, 5"`, `"2-"`, `"-4"`) |
+| `naming_pattern` | `String` | `"{stem}_{label}.pdf"` | Filename format template supporting `{stem}`, `{label}`, `{index:03}`, `{page}` |
+| `inherit_piece_info`| `bool` | `true` | Automatically copy `/PieceInfo` metadata from source PDF into all split parts |
+| `piece_info` | `Option<Value>` | `None` | Override `/PieceInfo` metadata to inject into each split part |
+| `flatten` | `bool` | `false` | Flatten form fields on each split page |
+
+### `RenderOptions` (PDF to Image)
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dpi` | `f32` | `150.0` | Target rendering resolution |
+| `format` | `OutputImageFormat`| `Png` | Image format: `Png` or `Jpeg` |
+| `jpeg_quality` | `u8` | `85` | JPEG compression quality (1-100) |
+| `pages` | `Option<String>` | `None` (all) | Page selection string (e.g. `"1, 3-5"`) |
+| `max_width` | `Option<u32>` | `None` | Maximum pixel width constraint |
+| `max_height` | `Option<u32>` | `None` | Maximum pixel height constraint |
+| `transparent_background`| `bool`| `false` | Keep transparent background for PNG |
+| `render_annotations`| `bool` | `true` | Render signatures, stamps, and annotations |
+| `inherit_pdf_piece_info`| `bool`| `true` | Automatically extract `/PieceInfo` from PDF and embed into the image |
+| `piece_info` | `Option<Value>` | `None` | Custom metadata to embed into image (`tEXt` chunk for PNG, `COM` marker for JPEG) |
+
+### `ExtractImageOptions` (Extract Embedded Images)
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `pages` | `Option<Vec<u32>>` | `None` (all) | Target 1-based page numbers to extract images from |
+| `min_width` | `u32` | `0` | Minimum image width in pixels (filters out tiny icons and bullets) |
+| `min_height` | `u32` | `0` | Minimum image height in pixels (filters out tiny icons and bullets) |
+| `naming_pattern` | `Option<String>` | `None` | Custom filename pattern (`"img_p{page}_{index}.{ext}"`, `{id}`) |
+| `deduplicate` | `bool` | `true` | Skip duplicate embedded images sharing the same PDF ObjectId |
+
+### `BatchOptions` (Folder Processing)
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `recursive` | `bool` | `false` | Recursively scan subdirectories for `.pdf` files |
+| `filter_pattern` | `Option<String>` | `None` | Filter filenames by glob pattern (e.g. `"*invoice*.pdf"`) |
+| `continue_on_error`| `bool` | `true` | Continue processing remaining files if one fails |
+| `overwrite` | `bool` | `true` | Overwrite existing output files |
+| `dry_run` | `bool` | `false` | Simulate operations and return count without writing to disk |
+| `max_threads` | `Option<usize>` | `None` | Limit Rayon multi-threading concurrency |
+
+### Image Metadata Injection & Extraction (2-way)
+~~~rust
+use pdftoolkit_core::ops::{inject_image_metadata, get_image_metadata, ImageFormatType};
+use serde_json::json;
+
+let meta = json!({ "doc_id": "INV-2026", "audit": true });
+
+// 1. Inject PieceInfo metadata into PNG or JPEG
+let tagged_png = inject_image_metadata(&raw_png_bytes, &meta, ImageFormatType::Png)?;
+
+// 2. Read back embedded metadata from image
+let extracted_meta = get_image_metadata(&tagged_png)?;
+assert_eq!(extracted_meta, Some(meta));
+~~~
+
+
 
 ## Output model
 

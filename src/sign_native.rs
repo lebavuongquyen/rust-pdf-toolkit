@@ -296,7 +296,9 @@ impl PdfSigner {
             return Err(SignError::InvalidSignatureField(field_name.into()));
         }
         if field.get(b"V").is_ok() {
-            return Err(SignError::InvalidSignatureField(format!("{field_name} is already signed")));
+            return Err(SignError::InvalidSignatureField(format!(
+                "{field_name} is already signed"
+            )));
         }
         Ok(())
     }
@@ -319,15 +321,18 @@ impl PdfSigner {
         }
 
         let mut base_pdf = pdf.to_vec();
-        if self.flatten || self.appearance.is_some() || self.piece_info.is_some() || self.locked_piece_info.is_some() {
-            let mut doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+        if self.flatten
+            || self.appearance.is_some()
+            || self.piece_info.is_some()
+            || self.locked_piece_info.is_some()
+        {
+            let mut doc = Document::load_mem(&base_pdf)
+                .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
             if self.flatten {
-                crate::flatten_form_fields(&mut doc, true)
-                    .map_err(SignError::SigningFailed)?;
+                crate::flatten_form_fields(&mut doc, true).map_err(SignError::SigningFailed)?;
             }
             if let Some(ref p_info) = self.piece_info {
-                crate::insert_piece_info(&mut doc, p_info)
-                    .map_err(SignError::SigningFailed)?;
+                crate::insert_piece_info(&mut doc, p_info).map_err(SignError::SigningFailed)?;
             }
             if let Some(ref locked) = self.locked_piece_info {
                 crate::insert_locked_piece_info(
@@ -349,13 +354,11 @@ impl PdfSigner {
                             .as_dict()
                             .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
                         let (bw, bh) = crate::rect(widget).map_err(SignError::PdfLoadFailed)?;
-                        let appearance_id = crate::appearance_renderer::render_signature_appearance(
-                            &mut doc,
-                            bw,
-                            bh,
-                            app_opts,
-                        )
-                        .map_err(SignError::SigningFailed)?;
+                        let appearance_id =
+                            crate::appearance_renderer::render_signature_appearance(
+                                &mut doc, bw, bh, app_opts,
+                            )
+                            .map_err(SignError::SigningFailed)?;
                         let widget_mut = doc
                             .get_object_mut(widget_id)
                             .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?
@@ -368,7 +371,8 @@ impl PdfSigner {
             base_pdf = crate::save_document(&mut doc).map_err(SignError::SigningFailed)?;
         }
 
-        let doc = Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+        let doc =
+            Document::load_mem(&base_pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
         let fields = crate::collect_fields(&doc);
         let Some((field_id, field, field_type)) = fields.get(field_name) else {
             return Err(SignError::SignatureFieldNotFound(field_name.into()));
@@ -435,7 +439,11 @@ impl PdfSigner {
             .as_dict_mut()
             .map_err(|_| SignError::InvalidSignatureField(field_name.into()))?;
         field_dict.set("V", Object::Reference(signature_id));
-        let ff = field_dict.get(b"Ff").ok().and_then(|x| x.as_i64().ok()).unwrap_or(0);
+        let ff = field_dict
+            .get(b"Ff")
+            .ok()
+            .and_then(|x| x.as_i64().ok())
+            .unwrap_or(0);
         field_dict.set("Ff", Object::Integer(ff | 1));
 
         let mut lock_dict = Dictionary::new();
@@ -446,7 +454,11 @@ impl PdfSigner {
         for wid in &widgets {
             if let Some(w_obj) = incremental.new_document.objects.get_mut(wid) {
                 if let Ok(w_dict) = w_obj.as_dict_mut() {
-                    let f = w_dict.get(b"F").ok().and_then(|x| x.as_i64().ok()).unwrap_or(0);
+                    let f = w_dict
+                        .get(b"F")
+                        .ok()
+                        .and_then(|x| x.as_i64().ok())
+                        .unwrap_or(0);
                     w_dict.set("F", Object::Integer(f | 1 | 64));
                 }
             }

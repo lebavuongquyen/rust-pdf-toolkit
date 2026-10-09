@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use hmac::{Hmac, Mac};
 use lopdf::{Dictionary, Document, Object, StringFormat};
@@ -296,44 +296,68 @@ pub fn verify_and_unlock_piece_info(
         }
     };
 
-    let nonce_bytes = match private_dict.get(b"Nonce").ok().and_then(extract_bytes_from_object) {
+    let nonce_bytes = match private_dict
+        .get(b"Nonce")
+        .ok()
+        .and_then(extract_bytes_from_object)
+    {
         Some(b) if b.len() == 12 => b,
         _ => {
             return Ok(PieceInfoUnlockResult {
-                status: PieceInfoUnlockStatus::Tampered("Invalid or missing Nonce in PieceInfo".into()),
+                status: PieceInfoUnlockStatus::Tampered(
+                    "Invalid or missing Nonce in PieceInfo".into(),
+                ),
                 data: None,
                 app_name: app_name.into(),
             });
         }
     };
 
-    let payload_bytes = match private_dict.get(b"Payload").ok().and_then(extract_bytes_from_object) {
+    let payload_bytes = match private_dict
+        .get(b"Payload")
+        .ok()
+        .and_then(extract_bytes_from_object)
+    {
         Some(b) => b,
         _ => {
             return Ok(PieceInfoUnlockResult {
-                status: PieceInfoUnlockStatus::Tampered("Invalid or missing Payload in PieceInfo".into()),
+                status: PieceInfoUnlockStatus::Tampered(
+                    "Invalid or missing Payload in PieceInfo".into(),
+                ),
                 data: None,
                 app_name: app_name.into(),
             });
         }
     };
 
-    let stored_doc_binding = match private_dict.get(b"DocBinding").ok().and_then(extract_bytes_from_object) {
+    let stored_doc_binding = match private_dict
+        .get(b"DocBinding")
+        .ok()
+        .and_then(extract_bytes_from_object)
+    {
         Some(b) if b.len() == 32 => b,
         _ => {
             return Ok(PieceInfoUnlockResult {
-                status: PieceInfoUnlockStatus::Tampered("Invalid or missing DocBinding in PieceInfo".into()),
+                status: PieceInfoUnlockStatus::Tampered(
+                    "Invalid or missing DocBinding in PieceInfo".into(),
+                ),
                 data: None,
                 app_name: app_name.into(),
             });
         }
     };
 
-    let stored_hmac = match private_dict.get(b"HMAC").ok().and_then(extract_bytes_from_object) {
+    let stored_hmac = match private_dict
+        .get(b"HMAC")
+        .ok()
+        .and_then(extract_bytes_from_object)
+    {
         Some(b) => b,
         _ => {
             return Ok(PieceInfoUnlockResult {
-                status: PieceInfoUnlockStatus::Tampered("Invalid or missing HMAC in PieceInfo".into()),
+                status: PieceInfoUnlockStatus::Tampered(
+                    "Invalid or missing HMAC in PieceInfo".into(),
+                ),
                 data: None,
                 app_name: app_name.into(),
             });

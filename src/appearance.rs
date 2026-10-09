@@ -229,12 +229,8 @@ impl PdfAppearance {
                 .as_dict()
                 .map_err(|e| e.to_string())?;
             let (bw, bh) = super::rect(widget)?;
-            let appearance_id = super::appearance_renderer::render_signature_appearance(
-                &mut doc,
-                bw,
-                bh,
-                options,
-            )?;
+            let appearance_id =
+                super::appearance_renderer::render_signature_appearance(&mut doc, bw, bh, options)?;
             let widget_mut = doc
                 .get_object_mut(widget_id)
                 .map_err(|e| e.to_string())?
@@ -252,4 +248,3 @@ impl PdfAppearance {
         super::save_document(&mut doc)
     }
 }
-

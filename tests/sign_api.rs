@@ -1,6 +1,7 @@
+extern crate pdftoolkit_core as pdffiller_core;
 use pdffiller_core::{
-    fill_and_sign_pdf, get_form_fields, CertificateSigner, EcdsaSigner, FieldStatus,
-    GraphicPosition, PdfSigner, SignatureDesign, SignatureTextLine,
+    CertificateSigner, EcdsaSigner, FieldStatus, GraphicPosition, PdfSigner, SignatureDesign,
+    SignatureTextLine, fill_and_sign_pdf, get_form_fields,
 };
 use std::fs;
 
@@ -88,31 +89,48 @@ fn assert_signature_pdf(template: &[u8], signed: &[u8], expected_subfilter: &[u8
     assert!(signature_fields >= 1);
 }
 
-
 #[test]
 fn sign_api_validates_signature_field_before_signing() {
     let template = fs::read("reference/template.pdf").expect("template");
     let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
     let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
-    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
-    let result = PdfSigner::new().field("Missing").signer(signer).validate(&template);
-    assert!(matches!(result, Err(pdffiller_core::SignError::SignatureFieldNotFound(_))));
+    let signer =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let result = PdfSigner::new()
+        .field("Missing")
+        .signer(signer)
+        .validate(&template);
+    assert!(matches!(
+        result,
+        Err(pdffiller_core::SignError::SignatureFieldNotFound(_))
+    ));
 }
-
 
 #[test]
 fn sign_api_rejects_already_signed_field() {
     let template = fs::read("reference/template.pdf").expect("template");
     let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
     let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
-    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
-    let signed = PdfSigner::new().field("Signature_0").signer(signer).sign(&template).expect("sign");
+    let signer =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let signed = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer)
+        .sign(&template)
+        .expect("sign");
 
     let certificate = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
     let private_key = fs::read("tests/fixtures/test-signing.key.der").expect("private key");
-    let signer = CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
-    let result = PdfSigner::new().field("Signature_0").signer(signer).validate(&signed);
-    assert!(matches!(result, Err(pdffiller_core::SignError::InvalidSignatureField(_))));
+    let signer =
+        CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
+    let result = PdfSigner::new()
+        .field("Signature_0")
+        .signer(signer)
+        .validate(&signed);
+    assert!(matches!(
+        result,
+        Err(pdffiller_core::SignError::InvalidSignatureField(_))
+    ));
 }
 
 #[test]
@@ -240,8 +258,7 @@ fn sign_api_fill_and_sign_unified() {
         .flatten(false);
 
     let (signed_unflattened, report2) =
-        fill_and_sign_pdf(&template, json_data, &pdf_signer2)
-            .expect("fill_and_sign_pdf failed");
+        fill_and_sign_pdf(&template, json_data, &pdf_signer2).expect("fill_and_sign_pdf failed");
 
     assert!(report2.filled_count() >= 2);
     assert_eq!(report2.count(FieldStatus::Failed), 0);
@@ -327,24 +344,32 @@ fn sign_api_signature_design_roundtrip_extract_and_inject() {
 
     println!("Extracted lines: {:#?}", extracted_design.text_lines);
     assert_eq!(extracted_design.text_lines.len(), 3);
-    assert_eq!(extracted_design.text_lines[0].text, "NGƯỜI KÝ: NGUYỄN VĂN A");
+    assert_eq!(
+        extracted_design.text_lines[0].text,
+        "NGƯỜI KÝ: NGUYỄN VĂN A"
+    );
     assert_eq!(extracted_design.text_lines[0].x, Some(58.5));
     assert_eq!(extracted_design.text_lines[0].y, Some(26.0));
     assert_eq!(extracted_design.text_lines[0].font_size, Some(8.5));
     assert_eq!(extracted_design.text_lines[0].color_rgb, Some([20, 30, 80]));
 
-    assert_eq!(extracted_design.text_lines[1].text, "NGÀY: 2026-10-08 23:00");
+    assert_eq!(
+        extracted_design.text_lines[1].text,
+        "NGÀY: 2026-10-08 23:00"
+    );
     assert_eq!(extracted_design.text_lines[1].x, Some(58.5));
     assert_eq!(extracted_design.text_lines[1].y, Some(15.0));
 
-    assert_eq!(extracted_design.text_lines[2].text, "LÝ DO: PHÊ DUYỆT HỢP ĐỒNG");
+    assert_eq!(
+        extracted_design.text_lines[2].text,
+        "LÝ DO: PHÊ DUYỆT HỢP ĐỒNG"
+    );
     assert_eq!(extracted_design.text_lines[2].x, Some(58.5));
     assert_eq!(extracted_design.text_lines[2].y, Some(5.0));
 
     // 4. Test re-injecting the extracted design to sign another document!
     let certificate2 = fs::read("tests/fixtures/test-signing.cert.der").expect("certificate");
-    let signer2 =
-        CertificateSigner::from_pkcs8_der(certificate2, &private_key).expect("signer2");
+    let signer2 = CertificateSigner::from_pkcs8_der(certificate2, &private_key).expect("signer2");
 
     let mut reinjected_design = extracted_design.clone();
     reinjected_design.text_lines[0].text = "NGƯỜI KÝ: TRẦN VĂN B".into();
@@ -381,7 +406,10 @@ fn sign_api_piece_info_support() {
         .signer(signer)
         .sign(&template)
         .expect("sign no piece info");
-    assert_eq!(pdffiller_core::get_piece_info(&signed_no_piece).unwrap(), None);
+    assert_eq!(
+        pdffiller_core::get_piece_info(&signed_no_piece).unwrap(),
+        None
+    );
 
     // 2. With piece_info builder -> get_piece_info returns the injected data
     let signer2 = CertificateSigner::from_pkcs8_der(
@@ -412,7 +440,10 @@ fn sign_api_piece_info_support() {
         .expect("get_piece_info")
         .expect("piece_info exists");
 
-    assert_eq!(extracted["PureSign"]["Private"]["document_id"], "DOC-XYZ-12345");
+    assert_eq!(
+        extracted["PureSign"]["Private"]["document_id"],
+        "DOC-XYZ-12345"
+    );
     assert_eq!(extracted["PureSign"]["Private"]["flow_id"], 9999);
     assert_eq!(extracted["PureSign"]["Private"]["tags"][0], "contract");
     assert_eq!(extracted["PureSign"]["Private"]["tags"][1], "signed");
@@ -437,7 +468,8 @@ fn sign_api_piece_info_support() {
     let extracted_fill = pdffiller_core::get_piece_info(&signed_fill)
         .expect("get_piece_info")
         .expect("piece_info exists");
-    assert_eq!(extracted_fill["PureSign"]["Private"]["document_id"], "DOC-XYZ-12345");
+    assert_eq!(
+        extracted_fill["PureSign"]["Private"]["document_id"],
+        "DOC-XYZ-12345"
+    );
 }
-
-

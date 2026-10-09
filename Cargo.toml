@@ -1,14 +1,14 @@
 [package]
-name = "pdffiller"
+name = "rust-pdf-toolkit"
 version = "0.2.0"
 edition = "2024"
 
 [lib]
-name = "pdffiller_core"
+name = "pdftoolkit_core"
 crate-type = ["rlib", "cdylib"]
 
 [[bin]]
-name = "pdffiller"
+name = "pdftoolkit"
 path = "src/main.rs"
 
 [dependencies]
@@ -17,11 +17,14 @@ lopdf = "0.45.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 wasm-bindgen = "0.2.129"
+js-sys = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
 getrandom_v4 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 sha2 = "0.10.9"
 hmac = "0.12.1"
 aes-gcm = "0.10.3"
+crc32fast = "1.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rsa = { version = "0.9.10", features = ["sha2"] }
@@ -29,3 +32,8 @@ p384 = { version = "0.13.1", features = ["ecdsa", "pkcs8"] }
 signature = "2.2.0"
 time = { version = "0.3.55", features = ["formatting"] }
 x509-parser = "0.18.0"
+clap = { version = "4", features = ["derive"] }
+rayon = "1.10"
+walkdir = "2.5"
+pdfium-bundled = "0.2"
+

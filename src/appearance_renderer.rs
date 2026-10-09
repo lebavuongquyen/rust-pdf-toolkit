@@ -268,7 +268,10 @@ pub fn render_signature_appearance(
         for (i, line) in custom_lines.iter().enumerate() {
             let clean_line = escape_pdf_string(&line.text);
             let fs = line.font_size.or(options.font_size).unwrap_or(default_fs);
-            let [r, g, b] = line.color_rgb.or(options.text_color).unwrap_or([20, 20, 20]);
+            let [r, g, b] = line
+                .color_rgb
+                .or(options.text_color)
+                .unwrap_or([20, 20, 20]);
             let r_f = r as f64 / 255.0;
             let g_f = g as f64 / 255.0;
             let b_f = b as f64 / 255.0;
@@ -292,9 +295,9 @@ pub fn render_signature_appearance(
     } else if let Some((tx, ty, tw, th)) = txt_box {
         if has_text {
             let n = lines.len();
-            let fs = options.font_size.unwrap_or_else(|| {
-                (th / (n.max(1) as f64 * 1.35)).clamp(6.0, 11.0)
-            });
+            let fs = options
+                .font_size
+                .unwrap_or_else(|| (th / (n.max(1) as f64 * 1.35)).clamp(6.0, 11.0));
             let lh = fs * 1.3;
             let tot_h = n as f64 * lh;
             let start_y = ty + (th + tot_h) / 2.0 - fs;
@@ -364,4 +367,3 @@ pub fn render_signature_appearance(
 
     Ok(doc.add_object(form_stream))
 }
-

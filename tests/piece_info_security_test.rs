@@ -1,6 +1,7 @@
+extern crate pdftoolkit_core as pdffiller_core;
 use pdffiller_core::{
-    insert_locked_piece_info, verify_and_unlock_piece_info, CertificateSigner, FillOptions,
-    PdfSigner, PieceInfoUnlockStatus,
+    CertificateSigner, FillOptions, PdfSigner, PieceInfoUnlockStatus, insert_locked_piece_info,
+    verify_and_unlock_piece_info,
 };
 use std::fs;
 
@@ -19,9 +20,10 @@ fn test_locked_piece_info_roundtrip_valid_and_wrong_key() {
     });
 
     // 1. Chèn locked PieceInfo vào PDF thông qua FillOptions
-    let options = FillOptions::new()
-        .flatten(false)
-        .locked_piece_info(app_name, payload.clone(), secret);
+    let options =
+        FillOptions::new()
+            .flatten(false)
+            .locked_piece_info(app_name, payload.clone(), secret);
 
     let (filled_pdf, report) = pdffiller_core::fill_pdf_with_options(
         &template,
@@ -46,8 +48,9 @@ fn test_locked_piece_info_roundtrip_valid_and_wrong_key() {
     assert_eq!(unlocked_data["approved"], true);
 
     // 3. Thất bại khi dùng sai Secret Key
-    let result_wrong_key = verify_and_unlock_piece_info(&filled_pdf, app_name, "HackerWrongKey@999")
-        .expect("verify with wrong key");
+    let result_wrong_key =
+        verify_and_unlock_piece_info(&filled_pdf, app_name, "HackerWrongKey@999")
+            .expect("verify with wrong key");
 
     assert_eq!(result_wrong_key.status, PieceInfoUnlockStatus::WrongKey);
     assert!(result_wrong_key.data.is_none());
@@ -97,7 +100,11 @@ fn test_locked_piece_info_detects_document_transplant() {
         lopdf::Object::Reference(id) => *id,
         _ => panic!("no root"),
     };
-    let cat_b = doc_b.get_object_mut(cat_b_id).unwrap().as_dict_mut().unwrap();
+    let cat_b = doc_b
+        .get_object_mut(cat_b_id)
+        .unwrap()
+        .as_dict_mut()
+        .unwrap();
     cat_b.set(b"PieceInfo".as_slice(), piece_info_from_a);
     let mut pdf_b_tampered = Vec::new();
     doc_b.save_to(&mut pdf_b_tampered).expect("save doc B");
@@ -134,10 +141,13 @@ fn test_locked_piece_info_with_pdf_signer() {
         .reason("Testing Locked PieceInfo in Signer")
         .locked_piece_info(app_name, audit_data.clone(), secret);
 
-    let signed_pdf = pdf_signer.sign(&template).expect("sign pdf with locked piece_info");
+    let signed_pdf = pdf_signer
+        .sign(&template)
+        .expect("sign pdf with locked piece_info");
 
     // Mở khóa từ file PDF đã ký số
-    let verify_res = verify_and_unlock_piece_info(&signed_pdf, app_name, secret).expect("verify signed");
+    let verify_res =
+        verify_and_unlock_piece_info(&signed_pdf, app_name, secret).expect("verify signed");
     assert_eq!(verify_res.status, PieceInfoUnlockStatus::Valid);
     let extracted = verify_res.data.unwrap();
     assert_eq!(extracted["audit_event"], "DIGITAL_SIGNATURE_APPLIED");
@@ -159,9 +169,12 @@ fn test_fill_pdf_with_locked_json_parameter() {
     })
     .to_string();
 
-    let (filled_pdf, report) =
-        pdffiller_core::fill_pdf(&template, r#"{"name":"Test User"}"#, Some(&piece_info_with_lock))
-            .expect("fill_pdf with __locked");
+    let (filled_pdf, report) = pdffiller_core::fill_pdf(
+        &template,
+        r#"{"name":"Test User"}"#,
+        Some(&piece_info_with_lock),
+    )
+    .expect("fill_pdf with __locked");
     assert_eq!(report.filled_count(), 1);
 
     let verify_res = verify_and_unlock_piece_info(&filled_pdf, app_name, secret).expect("verify");

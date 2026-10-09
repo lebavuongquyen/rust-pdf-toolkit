@@ -8,24 +8,32 @@ use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
+pub mod ops;
+pub use ops::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod batch;
+#[cfg(not(target_arch = "wasm32"))]
+pub use batch::*;
+
 mod appearance;
 mod appearance_parser;
 mod appearance_renderer;
 mod field_strategy;
-mod sign;
 mod piece_info_security;
+mod sign;
 
 pub use appearance::{
     GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureDesign, SignatureFont,
     SignatureLabels, SignatureTextLine, TextAlign,
 };
 pub use piece_info_security::{
-    compute_doc_fingerprint, insert_locked_piece_info, list_piece_info_applications,
-    verify_and_unlock_piece_info, PieceInfoUnlockResult, PieceInfoUnlockStatus,
+    PieceInfoUnlockResult, PieceInfoUnlockStatus, compute_doc_fingerprint,
+    insert_locked_piece_info, list_piece_info_applications, verify_and_unlock_piece_info,
 };
 pub use sign::{
-    fill_and_sign_pdf, CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError,
-    Signer,
+    CertificateSigner, CmsSignatureMode, EcdsaSigner, PdfSigner, SignError, Signer,
+    fill_and_sign_pdf,
 };
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -666,7 +674,12 @@ pub struct FormField {
     pub signature: Option<SignatureInfo>,
 }
 
-fn field_type_name(doc: &Document, field_id: ObjectId, field: &Dictionary, ft: &[u8]) -> FormFieldType {
+fn field_type_name(
+    doc: &Document,
+    field_id: ObjectId,
+    field: &Dictionary,
+    ft: &[u8],
+) -> FormFieldType {
     match ft {
         b"Sig" => FormFieldType::Signature,
         b"Btn" => {
@@ -735,7 +748,11 @@ fn field_has_image_appearance(doc: &Document, field_id: ObjectId, field: &Dictio
     find_field_image_stream(doc, field_id, field).is_some()
 }
 
-fn find_image_stream_in_object<'a>(doc: &'a Document, obj: &'a Object, depth: usize) -> Option<&'a Stream> {
+fn find_image_stream_in_object<'a>(
+    doc: &'a Document,
+    obj: &'a Object,
+    depth: usize,
+) -> Option<&'a Stream> {
     if depth > 5 {
         return None;
     }
@@ -745,7 +762,11 @@ fn find_image_stream_in_object<'a>(doc: &'a Document, obj: &'a Object, depth: us
             find_image_stream_in_object(doc, target, depth + 1)
         }
         Object::Stream(stream) => {
-            let subtype = stream.dict.get(b"Subtype").ok().and_then(|x| x.as_name().ok());
+            let subtype = stream
+                .dict
+                .get(b"Subtype")
+                .ok()
+                .and_then(|x| x.as_name().ok());
             if subtype == Some(b"Image") {
                 if !stream.content.is_empty() {
                     return Some(stream);
@@ -756,7 +777,9 @@ fn find_image_stream_in_object<'a>(doc: &'a Document, obj: &'a Object, depth: us
                         if let Ok(xobjs_obj) = res.get(b"XObject") {
                             if let Some(xobjs) = get_dict_from_object(doc, xobjs_obj) {
                                 for (_name, xobj_val) in xobjs.iter() {
-                                    if let Some(found) = find_image_stream_in_object(doc, xobj_val, depth + 1) {
+                                    if let Some(found) =
+                                        find_image_stream_in_object(doc, xobj_val, depth + 1)
+                                    {
                                         return Some(found);
                                     }
                                 }
@@ -807,7 +830,11 @@ fn find_image_stream_in_mk<'a>(doc: &'a Document, mk_obj: &'a Object) -> Option<
     }
 }
 
-fn find_field_image_stream<'a>(doc: &'a Document, field_id: ObjectId, field: &'a Dictionary) -> Option<&'a Stream> {
+fn find_field_image_stream<'a>(
+    doc: &'a Document,
+    field_id: ObjectId,
+    field: &'a Dictionary,
+) -> Option<&'a Stream> {
     if let Ok(ap) = field.get(b"AP") {
         if let Some(found) = find_image_stream_in_ap(doc, ap) {
             return Some(found);
@@ -841,7 +868,9 @@ fn extract_image_value(doc: &Document, field_id: ObjectId, field: &Dictionary) -
             if !s.is_empty() {
                 if s.starts_with("data:image/") {
                     return Some(Value::String(s.to_string()));
-                } else if s.len() > 20 && base64::engine::general_purpose::STANDARD.decode(s).is_ok() {
+                } else if s.len() > 20
+                    && base64::engine::general_purpose::STANDARD.decode(s).is_ok()
+                {
                     return Some(Value::String(format!("data:image/jpeg;base64,{}", s)));
                 }
             }
@@ -849,7 +878,11 @@ fn extract_image_value(doc: &Document, field_id: ObjectId, field: &Dictionary) -
     }
 
     let stream = find_field_image_stream(doc, field_id, field)?;
-    let filter = stream.dict.get(b"Filter").ok().and_then(|x| x.as_name().ok());
+    let filter = stream
+        .dict
+        .get(b"Filter")
+        .ok()
+        .and_then(|x| x.as_name().ok());
     let mime = if stream.content.starts_with(&[0x89, b'P', b'N', b'G']) {
         "image/png"
     } else if stream.content.starts_with(&[0xff, 0xd8]) || filter == Some(b"DCTDecode") {
@@ -868,7 +901,9 @@ fn javascript_text(doc: &Document, object: &Object) -> Option<String> {
     match object {
         Object::String(_, _) => object_text(object),
         Object::Stream(stream) => {
-            let bytes = stream.decompressed_content().unwrap_or_else(|_| stream.content.clone());
+            let bytes = stream
+                .decompressed_content()
+                .unwrap_or_else(|_| stream.content.clone());
             String::from_utf8(bytes).ok()
         }
         Object::Reference(id) => {
@@ -963,7 +998,12 @@ fn parse_date_format_from_js(js: &str) -> Option<String> {
 }
 
 fn date_format_from_aa(doc: &Document, aa: &Dictionary) -> Option<String> {
-    for key in [b"F".as_slice(), b"K".as_slice(), b"V".as_slice(), b"C".as_slice()] {
+    for key in [
+        b"F".as_slice(),
+        b"K".as_slice(),
+        b"V".as_slice(),
+        b"C".as_slice(),
+    ] {
         if let Ok(action) = aa.get(key) {
             if let Some(js) = javascript_text(doc, action) {
                 if let Some(fmt) = parse_date_format_from_js(&js) {
@@ -1006,7 +1046,12 @@ fn field_has_date_javascript(doc: &Document, field_id: ObjectId, field: &Diction
     let check_dict = |d: &Dictionary| -> bool {
         if let Ok(aa_obj) = d.get(b"AA") {
             if let Some(aa) = get_dict_from_object(doc, aa_obj) {
-                for key in [b"K".as_slice(), b"F".as_slice(), b"V".as_slice(), b"C".as_slice()] {
+                for key in [
+                    b"K".as_slice(),
+                    b"F".as_slice(),
+                    b"V".as_slice(),
+                    b"C".as_slice(),
+                ] {
                     if let Ok(action) = aa.get(key) {
                         if let Some(js) = javascript_text(doc, action) {
                             if js.contains("AFDate_") || js.contains("util.printd") {
@@ -1193,7 +1238,14 @@ fn extract_certificate_info(
                 let not_before = Some(cert.validity().not_before.to_string());
                 let not_after = Some(cert.validity().not_after.to_string());
                 let serial = Some(cert.raw_serial_as_string());
-                return (signer_name, signer_org, issuer, not_before, not_after, serial);
+                return (
+                    signer_name,
+                    signer_org,
+                    issuer,
+                    not_before,
+                    not_after,
+                    serial,
+                );
             }
         }
     }
@@ -1251,13 +1303,21 @@ fn extract_signature_info(
         return None;
     }
 
-    let name = sig_dict.and_then(|d| d.get(b"Name").ok()).and_then(object_text);
-    let reason = sig_dict.and_then(|d| d.get(b"Reason").ok()).and_then(object_text);
-    let location = sig_dict.and_then(|d| d.get(b"Location").ok()).and_then(object_text);
+    let name = sig_dict
+        .and_then(|d| d.get(b"Name").ok())
+        .and_then(object_text);
+    let reason = sig_dict
+        .and_then(|d| d.get(b"Reason").ok())
+        .and_then(object_text);
+    let location = sig_dict
+        .and_then(|d| d.get(b"Location").ok())
+        .and_then(object_text);
     let contact_info = sig_dict
         .and_then(|d| d.get(b"ContactInfo").ok())
         .and_then(object_text);
-    let signing_time = sig_dict.and_then(|d| d.get(b"M").ok()).and_then(object_text);
+    let signing_time = sig_dict
+        .and_then(|d| d.get(b"M").ok())
+        .and_then(object_text);
     let filter = sig_dict
         .and_then(|d| d.get(b"Filter").ok())
         .and_then(|x| x.as_name().ok())
@@ -1348,7 +1408,12 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
             let flags = field_flags(&definition.field) as u32;
             let read_only = flags & 1 != 0;
             let first = locations.first();
-            let field_type = field_type_name(doc, definition.id, &definition.field, &definition.field_type);
+            let field_type = field_type_name(
+                doc,
+                definition.id,
+                &definition.field,
+                &definition.field_type,
+            );
             let is_image_field = field_type == FormFieldType::Image;
             let is_signature_field = field_type == FormFieldType::Signature;
             let signature = if is_signature_field {
@@ -1360,9 +1425,12 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
                 extract_image_value(doc, definition.id, &definition.field)
                     .or_else(|| extract_resolved_field_value(doc, definition.id, &definition.field))
             } else if is_signature_field {
-                signature
-                    .as_ref()
-                    .and_then(|s| s.image.clone().map(Value::String).or_else(|| s.name.clone().map(Value::String)))
+                signature.as_ref().and_then(|s| {
+                    s.image
+                        .clone()
+                        .map(Value::String)
+                        .or_else(|| s.name.clone().map(Value::String))
+                })
             } else {
                 extract_resolved_field_value(doc, definition.id, &definition.field)
             };
@@ -1658,7 +1726,8 @@ fn resolve_or_create_widget_appearance(
                 let fs = (h * 0.7).clamp(8.0, 12.0);
                 let ty = (h - fs) / 2.0;
                 let escaped = appearance_renderer::escape_pdf_string(&val_str);
-                let content = format!("BT /Helv {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td ({escaped}) Tj ET\n");
+                let content =
+                    format!("BT /Helv {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td ({escaped}) Tj ET\n");
                 let stream = Stream::new(
                     dictionary! {
                         "Type" => "XObject",
@@ -1850,7 +1919,8 @@ pub fn flatten_form_fields(
 
                 let xobj_name = format!("FlatX{}_{}", widget_id.0, widget_id.1);
                 add_xobject_to_page(doc, page_id, &xobj_name, app_id)?;
-                let draw_cmd = format!("q {sx:.6} 0 0 {sy:.6} {tx:.6} {ty:.6} cm /{xobj_name} Do Q\n");
+                let draw_cmd =
+                    format!("q {sx:.6} 0 0 {sy:.6} {tx:.6} {ty:.6} cm /{xobj_name} Do Q\n");
                 append_page_content(doc, page_id, draw_cmd.into_bytes())?;
             }
         }
@@ -1969,7 +2039,10 @@ pub fn pdf_object_to_json(obj: &Object, doc: &Document) -> Value {
             }
         }
         Object::Array(arr) => {
-            let items: Vec<Value> = arr.iter().map(|item| pdf_object_to_json(item, doc)).collect();
+            let items: Vec<Value> = arr
+                .iter()
+                .map(|item| pdf_object_to_json(item, doc))
+                .collect();
             Value::Array(items)
         }
         Object::Dictionary(dict) => {

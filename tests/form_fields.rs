@@ -1,3 +1,4 @@
+extern crate pdftoolkit_core as pdffiller_core;
 use pdffiller_core::{FormFieldType, get_form_fields};
 use std::fs;
 
@@ -35,7 +36,6 @@ fn discovers_all_form_fields_with_exact_types() {
     }
 }
 
-
 #[test]
 fn extracts_date_format_for_date_fields() {
     let template8 = fs::read("reference/template_8field.pdf").expect("template_8field");
@@ -57,10 +57,7 @@ fn extracts_date_format_for_date_fields() {
 
     let template_ref = fs::read("reference/template.pdf").expect("template");
     let fields_ref = get_form_fields(&template_ref).expect("fields");
-    let date_field_ref = fields_ref
-        .iter()
-        .find(|f| f.name == "date")
-        .expect("date");
+    let date_field_ref = fields_ref.iter().find(|f| f.name == "date").expect("date");
     assert_eq!(date_field_ref.field_type, FormFieldType::Date);
     assert_eq!(date_field_ref.date_format.as_deref(), Some("dd/mm/yyyy"));
 
@@ -92,7 +89,8 @@ fn extracts_image_field_value_when_filled() {
     })
     .to_string();
 
-    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_json, None).expect("fill");
+    let (filled_bytes, report) =
+        pdffiller_core::fill_pdf(&template, &fill_json, None).expect("fill");
     assert_eq!(report.filled_count(), 1);
 
     let fields_after = get_form_fields(&filled_bytes).expect("fields");
@@ -140,7 +138,10 @@ fn extracts_signature_info_and_image_from_signed_pdf() {
     );
 
     // Verify signature info struct
-    let sig_info = sig_field.signature.as_ref().expect("SignatureInfo should be present");
+    let sig_info = sig_field
+        .signature
+        .as_ref()
+        .expect("SignatureInfo should be present");
     assert_eq!(
         sig_info.reason.as_deref(),
         Some("I am the author of this document")
@@ -152,7 +153,13 @@ fn extracts_signature_info_and_image_from_signed_pdf() {
         Some("D:20261008162001+07'00'")
     );
     assert!(sig_info.image.is_some());
-    assert!(sig_info.image.as_ref().unwrap().starts_with("data:image/jpeg;base64,"));
+    assert!(
+        sig_info
+            .image
+            .as_ref()
+            .unwrap()
+            .starts_with("data:image/jpeg;base64,")
+    );
 
     // Verify certificate info
     assert_eq!(
@@ -175,14 +182,32 @@ fn extracts_all_field_types_values_when_filled() {
     let template = fs::read("reference/template_8field.pdf").expect("template_8field.pdf");
     let fields = get_form_fields(&template).expect("get_form_fields");
 
-    let combo = fields.iter().find(|f| f.name == "Combo Box0").expect("combo");
-    let combo_val = combo.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Item1".into());
+    let combo = fields
+        .iter()
+        .find(|f| f.name == "Combo Box0")
+        .expect("combo");
+    let combo_val = combo
+        .options
+        .first()
+        .map(|o| o.value.clone())
+        .unwrap_or_else(|| "Item1".into());
 
     let list = fields.iter().find(|f| f.name == "List Box0").expect("list");
-    let list_val = list.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Item1".into());
+    let list_val = list
+        .options
+        .first()
+        .map(|o| o.value.clone())
+        .unwrap_or_else(|| "Item1".into());
 
-    let radio = fields.iter().find(|f| f.name == "Radio Button0").expect("radio");
-    let radio_val = radio.options.first().map(|o| o.value.clone()).unwrap_or_else(|| "Choice1".into());
+    let radio = fields
+        .iter()
+        .find(|f| f.name == "Radio Button0")
+        .expect("radio");
+    let radio_val = radio
+        .options
+        .first()
+        .map(|o| o.value.clone())
+        .unwrap_or_else(|| "Choice1".into());
 
     let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
@@ -198,30 +223,63 @@ fn extracts_all_field_types_values_when_filled() {
         "Image Field0": data_url,
     });
 
-    let (filled_bytes, report) = pdffiller_core::fill_pdf(&template, &fill_data.to_string(), None).expect("fill");
+    let (filled_bytes, report) =
+        pdffiller_core::fill_pdf(&template, &fill_data.to_string(), None).expect("fill");
     assert!(report.filled_count() >= 6);
 
     let filled_fields = get_form_fields(&filled_bytes).expect("fields after fill");
 
-    let text_f = filled_fields.iter().find(|f| f.name == "Text Field0").unwrap();
-    assert_eq!(text_f.value, Some(serde_json::Value::String("Nguyen Van A".into())));
+    let text_f = filled_fields
+        .iter()
+        .find(|f| f.name == "Text Field0")
+        .unwrap();
+    assert_eq!(
+        text_f.value,
+        Some(serde_json::Value::String("Nguyen Van A".into()))
+    );
 
-    let date_f = filled_fields.iter().find(|f| f.name == "Date Field0").unwrap();
-    assert_eq!(date_f.value, Some(serde_json::Value::String("12/25/2026".into())));
+    let date_f = filled_fields
+        .iter()
+        .find(|f| f.name == "Date Field0")
+        .unwrap();
+    assert_eq!(
+        date_f.value,
+        Some(serde_json::Value::String("12/25/2026".into()))
+    );
 
-    let check_f = filled_fields.iter().find(|f| f.name == "Check Box0").unwrap();
+    let check_f = filled_fields
+        .iter()
+        .find(|f| f.name == "Check Box0")
+        .unwrap();
     assert!(check_f.value.is_some());
     assert_ne!(check_f.value.as_ref().unwrap().as_str().unwrap(), "Off");
 
-    let combo_f = filled_fields.iter().find(|f| f.name == "Combo Box0").unwrap();
+    let combo_f = filled_fields
+        .iter()
+        .find(|f| f.name == "Combo Box0")
+        .unwrap();
     assert_eq!(combo_f.value, Some(serde_json::Value::String(combo_val)));
 
-    let list_f = filled_fields.iter().find(|f| f.name == "List Box0").unwrap();
+    let list_f = filled_fields
+        .iter()
+        .find(|f| f.name == "List Box0")
+        .unwrap();
     assert_eq!(list_f.value, Some(serde_json::Value::String(list_val)));
 
-    let img_f = filled_fields.iter().find(|f| f.name == "Image Field0").unwrap();
+    let img_f = filled_fields
+        .iter()
+        .find(|f| f.name == "Image Field0")
+        .unwrap();
     assert!(img_f.value.is_some());
-    assert!(img_f.value.as_ref().unwrap().as_str().unwrap().starts_with("data:image/jpeg;base64,"));
+    assert!(
+        img_f
+            .value
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/jpeg;base64,")
+    );
 }
 
 #[test]
@@ -239,7 +297,10 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (unflat_bytes, _) = pdffiller_core::fill_pdf_with_options(
         &template,
         &fill_data.to_string(),
-        &pdffiller_core::FillOptions { flatten: false, ..Default::default() },
+        &pdffiller_core::FillOptions {
+            flatten: false,
+            ..Default::default()
+        },
     )
     .expect("fill unflat");
     let unflat_fields = get_form_fields(&unflat_bytes).expect("fields unflat");
@@ -249,7 +310,10 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (flat_bytes, report) = pdffiller_core::fill_pdf_with_options(
         &template,
         &fill_data.to_string(),
-        &pdffiller_core::FillOptions { flatten: true, ..Default::default() },
+        &pdffiller_core::FillOptions {
+            flatten: true,
+            ..Default::default()
+        },
     )
     .expect("fill flat");
     assert_eq!(report.filled_count(), 2);
@@ -266,7 +330,10 @@ fn fill_pdf_with_options_flattens_fields_except_signature() {
     let (flat_ref_bytes, _) = pdffiller_core::fill_pdf_with_options(
         &template_ref,
         r#"{"full_name":"Test User"}"#,
-        &pdffiller_core::FillOptions { flatten: true, ..Default::default() },
+        &pdffiller_core::FillOptions {
+            flatten: true,
+            ..Default::default()
+        },
     )
     .expect("fill flat template.pdf");
     let flat_ref_fields = get_form_fields(&flat_ref_bytes).expect("fields flat template.pdf");
@@ -308,15 +375,15 @@ fn pdf_appearance_sets_custom_signature_layout() {
         ..Default::default()
     };
 
-    let result = pdffiller_core::PdfAppearance::set_signature_appearance(
-        &template,
-        "Signature_0",
-        &options,
-    )
-    .expect("set_signature_appearance");
+    let result =
+        pdffiller_core::PdfAppearance::set_signature_appearance(&template, "Signature_0", &options)
+            .expect("set_signature_appearance");
 
     let fields = get_form_fields(&result).expect("fields");
-    let sig_f = fields.iter().find(|f| f.name == "Signature_0").expect("Signature_0");
+    let sig_f = fields
+        .iter()
+        .find(|f| f.name == "Signature_0")
+        .expect("Signature_0");
     assert_eq!(sig_f.field_type, FormFieldType::Signature);
     assert!(sig_f.value.is_some());
 }
@@ -326,7 +393,8 @@ fn test_fill_pdf_piece_info_insertion_and_extraction() {
     let template = fs::read("reference/template.pdf").expect("template.pdf");
 
     // 1. None piece_info -> None extracted
-    let (pdf_no_piece, _) = pdffiller_core::fill_pdf(&template, r#"{"name":"Test"}"#, None).expect("fill");
+    let (pdf_no_piece, _) =
+        pdffiller_core::fill_pdf(&template, r#"{"name":"Test"}"#, None).expect("fill");
     assert_eq!(pdffiller_core::get_piece_info(&pdf_no_piece).unwrap(), None);
 
     // 2. Some piece_info as JSON string
