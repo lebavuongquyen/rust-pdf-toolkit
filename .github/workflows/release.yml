@@ -79,6 +79,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path dist
           $TAG = "${{ steps.vars.outputs.tag }}"
           $ARCHIVE = "pdftoolkit-$TAG-${{ matrix.archive_name }}"
           Compress-Archive -Path target\${{ matrix.target }}\release\pdftoolkit.exe, README.md, LICENSE -DestinationPath "dist\$ARCHIVE"
