@@ -29,10 +29,11 @@ impl FieldPresetPosition {
 }
 
 /// Placement configuration of a signature field.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum SignaturePlacement {
     /// Invisible cryptographic signature (Rect [0, 0, 0, 0]).
     /// Widely used for automated billing, receipts, background verification.
+    #[default]
     Invisible,
     /// Explicit rectangle coordinates in points: [llx, lly, urx, ury].
     Rect([f64; 4]),
@@ -44,12 +45,6 @@ pub enum SignaturePlacement {
         margin_x: f64,
         margin_y: f64,
     },
-}
-
-impl Default for SignaturePlacement {
-    fn default() -> Self {
-        Self::Invisible
-    }
 }
 
 impl SignaturePlacement {
@@ -311,7 +306,7 @@ pub fn add_signature_field_to_doc(
     // Determine target page
     let target_page_num = match options.page {
         Some(p) if p >= 1 && p <= total_pages => p,
-        Some(p) if p == 0 => total_pages,
+        Some(0) => total_pages,
         None => total_pages,
         Some(p) => {
             return Err(format!(
@@ -445,26 +440,26 @@ pub fn remove_signature_field_from_doc(
     let remove_set: std::collections::HashSet<ObjectId> = to_remove_ids.iter().copied().collect();
 
     // 1. Remove from AcroForm /Fields
-    for (_, obj) in doc.objects.iter_mut() {
-        if let Ok(dict) = obj.as_dict_mut() {
-            if let Ok(fields_arr) = dict.get_mut(b"Fields").and_then(|f| f.as_array_mut()) {
-                fields_arr.retain(|item| match item.as_reference() {
-                    Ok(id) => !remove_set.contains(&id),
-                    _ => true,
-                });
-            }
+    for obj in doc.objects.values_mut() {
+        if let Ok(dict) = obj.as_dict_mut()
+            && let Ok(fields_arr) = dict.get_mut(b"Fields").and_then(|f| f.as_array_mut())
+        {
+            fields_arr.retain(|item| match item.as_reference() {
+                Ok(id) => !remove_set.contains(&id),
+                _ => true,
+            });
         }
     }
 
     // 2. Remove from Page /Annots
     for (_num, page_id) in doc.get_pages() {
-        if let Ok(page) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
-            if let Ok(annots) = page.get_mut(b"Annots").and_then(|a| a.as_array_mut()) {
-                annots.retain(|item| match item.as_reference() {
-                    Ok(id) => !remove_set.contains(&id),
-                    _ => true,
-                });
-            }
+        if let Ok(page) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut())
+            && let Ok(annots) = page.get_mut(b"Annots").and_then(|a| a.as_array_mut())
+        {
+            annots.retain(|item| match item.as_reference() {
+                Ok(id) => !remove_set.contains(&id),
+                _ => true,
+            });
         }
     }
 
@@ -551,25 +546,25 @@ fn get_page_dimensions(doc: &Document, page_id: ObjectId) -> Result<(f64, f64, f
         .ok()
         .or_else(|| page_dict.get(b"MediaBox").ok());
 
-    if let Some(Object::Array(arr)) = box_obj {
-        if arr.len() >= 4 {
-            let parse_num = |obj: &Object| -> f64 {
-                match obj {
-                    Object::Integer(i) => *i as f64,
-                    Object::Real(r) => *r as f64,
-                    _ => 0.0,
-                }
-            };
-            let x1 = parse_num(&arr[0]);
-            let y1 = parse_num(&arr[1]);
-            let x2 = parse_num(&arr[2]);
-            let y2 = parse_num(&arr[3]);
-            let llx = x1.min(x2);
-            let lly = y1.min(y2);
-            let width = (x2 - x1).abs();
-            let height = (y2 - y1).abs();
-            return Ok((llx, lly, width, height));
-        }
+    if let Some(Object::Array(arr)) = box_obj
+        && arr.len() >= 4
+    {
+        let parse_num = |obj: &Object| -> f64 {
+            match obj {
+                Object::Integer(i) => *i as f64,
+                Object::Real(r) => *r as f64,
+                _ => 0.0,
+            }
+        };
+        let x1 = parse_num(&arr[0]);
+        let y1 = parse_num(&arr[1]);
+        let x2 = parse_num(&arr[2]);
+        let y2 = parse_num(&arr[3]);
+        let llx = x1.min(x2);
+        let lly = y1.min(y2);
+        let width = (x2 - x1).abs();
+        let height = (y2 - y1).abs();
+        return Ok((llx, lly, width, height));
     }
 
     // Default standard A4

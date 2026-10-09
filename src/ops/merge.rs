@@ -148,10 +148,10 @@ pub fn merge_documents_with_options(
             b"Pages" => {
                 if let Ok(dictionary) = object.as_dict() {
                     let mut dictionary = dictionary.clone();
-                    if let Some((_, ref old_pages_obj)) = pages_object {
-                        if let Ok(old_dictionary) = old_pages_obj.as_dict() {
-                            dictionary.extend(old_dictionary);
-                        }
+                    if let Some((_, ref old_pages_obj)) = pages_object
+                        && let Ok(old_dictionary) = old_pages_obj.as_dict()
+                    {
+                        dictionary.extend(old_dictionary);
                     }
                     pages_object = Some((
                         if let Some((id, _)) = pages_object {
@@ -223,26 +223,25 @@ pub fn merge_documents_with_options(
         let mut base_acroform_dict: Option<lopdf::Dictionary> = None;
 
         for doc in &processed_docs {
-            if let Ok(root_id) = doc.trailer.get(b"Root").and_then(Object::as_reference) {
-                if let Ok(c_dict) = doc.get_object(root_id).and_then(Object::as_dict) {
-                    if let Ok(af_val) = c_dict.get(b"AcroForm") {
-                        let af_dict = match af_val {
-                            Object::Reference(ref_id) => {
-                                doc.get_object(*ref_id).and_then(Object::as_dict).ok()
-                            }
-                            Object::Dictionary(d) => Some(d),
-                            _ => None,
-                        };
-                        if let Some(d) = af_dict {
-                            if base_acroform_dict.is_none() {
-                                base_acroform_dict = Some(d.clone());
-                            }
-                            if let Ok(fields) = d.get(b"Fields").and_then(Object::as_array) {
-                                for f in fields {
-                                    if !combined_fields.contains(f) {
-                                        combined_fields.push(f.clone());
-                                    }
-                                }
+            if let Ok(root_id) = doc.trailer.get(b"Root").and_then(Object::as_reference)
+                && let Ok(c_dict) = doc.get_object(root_id).and_then(Object::as_dict)
+                && let Ok(af_val) = c_dict.get(b"AcroForm")
+            {
+                let af_dict = match af_val {
+                    Object::Reference(ref_id) => {
+                        doc.get_object(*ref_id).and_then(Object::as_dict).ok()
+                    }
+                    Object::Dictionary(d) => Some(d),
+                    _ => None,
+                };
+                if let Some(d) = af_dict {
+                    if base_acroform_dict.is_none() {
+                        base_acroform_dict = Some(d.clone());
+                    }
+                    if let Ok(fields) = d.get(b"Fields").and_then(Object::as_array) {
+                        for f in fields {
+                            if !combined_fields.contains(f) {
+                                combined_fields.push(f.clone());
                             }
                         }
                     }
@@ -271,10 +270,10 @@ pub fn merge_documents_with_options(
     // Build outlines/bookmarks if enabled
     if options.create_bookmarks {
         merged.adjust_zero_pages();
-        if let Some(outline_id) = merged.build_outline() {
-            if let Ok(Object::Dictionary(dict)) = merged.get_object_mut(catalog_id) {
-                dict.set("Outlines", Object::Reference(outline_id));
-            }
+        if let Some(outline_id) = merged.build_outline()
+            && let Ok(Object::Dictionary(dict)) = merged.get_object_mut(catalog_id)
+        {
+            dict.set("Outlines", Object::Reference(outline_id));
         }
     }
 

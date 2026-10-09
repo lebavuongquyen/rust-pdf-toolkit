@@ -198,7 +198,7 @@ fn test_batch_options_dry_run_and_filter() {
 fn test_extract_images_from_pdf() {
     use pdftoolkit_core::ops::{ExtractImageOptions, extract_images_from_bytes};
 
-    let pdf_bytes = fs::read("output/poc-filled.pdf").expect("read poc-filled.pdf");
+    let pdf_bytes = fs::read("tests/fixtures/poc-filled.pdf").expect("read poc-filled.pdf");
 
     // 1. Extract all images
     let mut opts = ExtractImageOptions::default();

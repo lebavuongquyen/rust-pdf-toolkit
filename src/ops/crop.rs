@@ -350,28 +350,28 @@ pub fn detect_page_content_bbox(doc: &Document, page_id: ObjectId) -> Option<[f6
             }
             // Rectangle operator: x y w h re
             "re" => {
-                if op.operands.len() >= 4 {
-                    if let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
+                if op.operands.len() >= 4
+                    && let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
                         op.operands[0].as_float(),
                         op.operands[1].as_float(),
                         op.operands[2].as_float(),
                         op.operands[3].as_float(),
-                    ) {
-                        let (x, y, w, h) = (x as f64, y as f64, w as f64, h as f64);
-                        for &(px, py) in &[(x, y), (x + w, y), (x + w, y + h), (x, y + h)] {
-                            let (tx, ty) = ctm.transform_point(px, py);
-                            update_box(tx, ty);
-                        }
+                    )
+                {
+                    let (x, y, w, h) = (x as f64, y as f64, w as f64, h as f64);
+                    for &(px, py) in &[(x, y), (x + w, y), (x + w, y + h), (x, y + h)] {
+                        let (tx, ty) = ctm.transform_point(px, py);
+                        update_box(tx, ty);
                     }
                 }
             }
             // Path move-to / line-to operators: m, l
             "m" | "l" => {
-                if op.operands.len() >= 2 {
-                    if let (Ok(x), Ok(y)) = (op.operands[0].as_float(), op.operands[1].as_float()) {
-                        let (tx, ty) = ctm.transform_point(x as f64, y as f64);
-                        update_box(tx, ty);
-                    }
+                if op.operands.len() >= 2
+                    && let (Ok(x), Ok(y)) = (op.operands[0].as_float(), op.operands[1].as_float())
+                {
+                    let (tx, ty) = ctm.transform_point(x as f64, y as f64);
+                    update_box(tx, ty);
                 }
             }
             // Cubic bezier operators: c, v, y
@@ -403,10 +403,10 @@ pub fn detect_page_content_bbox(doc: &Document, page_id: ObjectId) -> Option<[f6
             }
             // Font setting: /FontName size Tf
             "Tf" => {
-                if op.operands.len() >= 2 {
-                    if let Ok(sz) = op.operands[1].as_float() {
-                        current_font_size = (sz as f64).abs().max(1.0);
-                    }
+                if op.operands.len() >= 2
+                    && let Ok(sz) = op.operands[1].as_float()
+                {
+                    current_font_size = (sz as f64).abs().max(1.0);
                 }
             }
             // Text matrix operators
@@ -421,20 +421,19 @@ pub fn detect_page_content_bbox(doc: &Document, page_id: ObjectId) -> Option<[f6
                 }
             }
             "Td" | "TD" => {
-                if op.operands.len() >= 2 {
-                    if let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
-                    {
-                        let offset = Matrix {
-                            a: 1.0,
-                            b: 0.0,
-                            c: 0.0,
-                            d: 1.0,
-                            e: tx as f64,
-                            f: ty as f64,
-                        };
-                        tlm = offset.multiply(&tlm);
-                        tm = tlm.clone();
-                    }
+                if op.operands.len() >= 2
+                    && let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
+                {
+                    let offset = Matrix {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: tx as f64,
+                        f: ty as f64,
+                    };
+                    tlm = offset.multiply(&tlm);
+                    tm = tlm.clone();
                 }
             }
             "T*" => {
@@ -517,23 +516,23 @@ pub fn detect_page_content_bbox(doc: &Document, page_id: ObjectId) -> Option<[f6
 pub fn get_page_mediabox(doc: &Document, page_id: ObjectId) -> [f64; 4] {
     let mut current_id = page_id;
     for _ in 0..20 {
-        if let Ok(obj) = doc.get_object(current_id) {
-            if let Ok(dict) = obj.as_dict() {
-                if let Ok(Object::Array(arr)) = dict.get(b"MediaBox") {
-                    if arr.len() == 4 {
-                        let nums: Vec<f64> = arr
-                            .iter()
-                            .filter_map(|v| v.as_float().ok().map(|x| x as f64))
-                            .collect();
-                        if nums.len() == 4 {
-                            return [nums[0], nums[1], nums[2], nums[3]];
-                        }
-                    }
+        if let Ok(obj) = doc.get_object(current_id)
+            && let Ok(dict) = obj.as_dict()
+        {
+            if let Ok(Object::Array(arr)) = dict.get(b"MediaBox")
+                && arr.len() == 4
+            {
+                let nums: Vec<f64> = arr
+                    .iter()
+                    .filter_map(|v| v.as_float().ok().map(|x| x as f64))
+                    .collect();
+                if nums.len() == 4 {
+                    return [nums[0], nums[1], nums[2], nums[3]];
                 }
-                if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
-                    current_id = parent_ref;
-                    continue;
-                }
+            }
+            if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
+                current_id = parent_ref;
+                continue;
             }
         }
         break;
@@ -552,23 +551,23 @@ pub fn get_page_target_box(doc: &Document, page_id: ObjectId, target: TargetBox)
 
     let mut current_id = page_id;
     for _ in 0..20 {
-        if let Ok(obj) = doc.get_object(current_id) {
-            if let Ok(dict) = obj.as_dict() {
-                if let Ok(Object::Array(arr)) = dict.get(key) {
-                    if arr.len() == 4 {
-                        let nums: Vec<f64> = arr
-                            .iter()
-                            .filter_map(|v| v.as_float().ok().map(|x| x as f64))
-                            .collect();
-                        if nums.len() == 4 {
-                            return [nums[0], nums[1], nums[2], nums[3]];
-                        }
-                    }
+        if let Ok(obj) = doc.get_object(current_id)
+            && let Ok(dict) = obj.as_dict()
+        {
+            if let Ok(Object::Array(arr)) = dict.get(key)
+                && arr.len() == 4
+            {
+                let nums: Vec<f64> = arr
+                    .iter()
+                    .filter_map(|v| v.as_float().ok().map(|x| x as f64))
+                    .collect();
+                if nums.len() == 4 {
+                    return [nums[0], nums[1], nums[2], nums[3]];
                 }
-                if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
-                    current_id = parent_ref;
-                    continue;
-                }
+            }
+            if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
+                current_id = parent_ref;
+                continue;
             }
         }
         break;

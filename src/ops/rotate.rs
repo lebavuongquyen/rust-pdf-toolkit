@@ -364,7 +364,7 @@ pub fn rotate_pdf_pages_in_doc(
 
 /// Normalizes an angle in degrees to a valid PDF rotation multiple of 90: 0, 90, 180, 270.
 pub fn normalize_degrees(deg: i32) -> i32 {
-    let rem = ((deg % 360) + 360) % 360;
+    let rem = deg.rem_euclid(360);
     match rem {
         0..=44 | 316..=360 => 0,
         45..=134 => 90,
@@ -378,17 +378,17 @@ pub fn normalize_degrees(deg: i32) -> i32 {
 pub fn get_page_rotation(doc: &Document, page_id: ObjectId) -> i32 {
     let mut current_id = page_id;
     for _ in 0..20 {
-        if let Ok(obj) = doc.get_object(current_id) {
-            if let Ok(dict) = obj.as_dict() {
-                if let Ok(rot_obj) = dict.get(b"Rotate") {
-                    if let Ok(deg) = rot_obj.as_i64() {
-                        return normalize_degrees(deg as i32);
-                    }
-                }
-                if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
-                    current_id = parent_ref;
-                    continue;
-                }
+        if let Ok(obj) = doc.get_object(current_id)
+            && let Ok(dict) = obj.as_dict()
+        {
+            if let Ok(rot_obj) = dict.get(b"Rotate")
+                && let Ok(deg) = rot_obj.as_i64()
+            {
+                return normalize_degrees(deg as i32);
+            }
+            if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
+                current_id = parent_ref;
+                continue;
             }
         }
         break;
@@ -400,24 +400,24 @@ pub fn get_page_rotation(doc: &Document, page_id: ObjectId) -> i32 {
 pub fn get_page_box(doc: &Document, page_id: ObjectId) -> [f64; 4] {
     let mut current_id = page_id;
     for _ in 0..20 {
-        if let Ok(obj) = doc.get_object(current_id) {
-            if let Ok(dict) = obj.as_dict() {
-                let box_obj = dict.get(b"CropBox").or_else(|_| dict.get(b"MediaBox"));
-                if let Ok(Object::Array(arr)) = box_obj {
-                    if arr.len() == 4 {
-                        let nums: Vec<f64> = arr
-                            .iter()
-                            .filter_map(|v| v.as_float().ok().map(|x| x as f64))
-                            .collect();
-                        if nums.len() == 4 {
-                            return [nums[0], nums[1], nums[2], nums[3]];
-                        }
-                    }
+        if let Ok(obj) = doc.get_object(current_id)
+            && let Ok(dict) = obj.as_dict()
+        {
+            let box_obj = dict.get(b"CropBox").or_else(|_| dict.get(b"MediaBox"));
+            if let Ok(Object::Array(arr)) = box_obj
+                && arr.len() == 4
+            {
+                let nums: Vec<f64> = arr
+                    .iter()
+                    .filter_map(|v| v.as_float().ok().map(|x| x as f64))
+                    .collect();
+                if nums.len() == 4 {
+                    return [nums[0], nums[1], nums[2], nums[3]];
                 }
-                if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
-                    current_id = parent_ref;
-                    continue;
-                }
+            }
+            if let Ok(parent_ref) = dict.get(b"Parent").and_then(|p| p.as_reference()) {
+                current_id = parent_ref;
+                continue;
             }
         }
         break;
@@ -497,9 +497,9 @@ fn record_text_angle(
 
     let bucket = if deg >= 315.0 || deg < 45.0 {
         0 // 0 deg
-    } else if deg >= 45.0 && deg < 135.0 {
+    } else if (45.0..135.0).contains(&deg) {
         1 // 90 deg
-    } else if deg >= 135.0 && deg < 225.0 {
+    } else if (135.0..225.0).contains(&deg) {
         2 // 180 deg
     } else {
         3 // 270 deg
@@ -550,19 +550,18 @@ pub fn detect_page_text_orientation(doc: &Document, page_id: ObjectId) -> (Optio
                 }
             }
             "Td" | "TD" => {
-                if op.operands.len() >= 2 {
-                    if let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
-                    {
-                        let offset = Matrix {
-                            a: 1.0,
-                            b: 0.0,
-                            c: 0.0,
-                            d: 1.0,
-                            e: tx as f64,
-                            f: ty as f64,
-                        };
-                        tm = offset.multiply(&tm);
-                    }
+                if op.operands.len() >= 2
+                    && let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
+                {
+                    let offset = Matrix {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: tx as f64,
+                        f: ty as f64,
+                    };
+                    tm = offset.multiply(&tm);
                 }
             }
             "Tj" => {
@@ -610,9 +609,9 @@ pub fn detect_page_text_orientation(doc: &Document, page_id: ObjectId) -> (Optio
 
     let mut best_idx = 0;
     let mut best_count = counts[0];
-    for i in 1..4 {
-        if counts[i] > best_count {
-            best_count = counts[i];
+    for (i, &count) in counts.iter().enumerate().skip(1) {
+        if count > best_count {
+            best_count = count;
             best_idx = i;
         }
     }

@@ -146,7 +146,7 @@ fn sign_api_supports_flatten_and_custom_appearance() {
     let signer =
         CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
 
-    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let img_bytes = fs::read("tests/fixtures/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
     let data_url = format!("data:image/jpeg;base64,{}", b64);
 
@@ -279,7 +279,7 @@ fn sign_api_signature_design_roundtrip_extract_and_inject() {
     let signer =
         CertificateSigner::from_pkcs8_der(certificate, &private_key).expect("certificate signer");
 
-    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let img_bytes = fs::read("tests/fixtures/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
     let data_url = format!("data:image/jpeg;base64,{}", b64);
 

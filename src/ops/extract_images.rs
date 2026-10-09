@@ -242,10 +242,10 @@ fn collect_images_from_annots<'a>(
                     },
                     _ => None,
                 };
-                if let Some(d) = mk_dict {
-                    if let Ok(icon_obj) = d.get(b"I") {
-                        collect_from_ap_sub(doc, icon_obj, collected, depth + 1);
-                    }
+                if let Some(d) = mk_dict
+                    && let Ok(icon_obj) = d.get(b"I")
+                {
+                    collect_from_ap_sub(doc, icon_obj, collected, depth + 1);
                 }
             }
         }
@@ -275,10 +275,10 @@ fn collect_from_ap_sub<'a>(
                             if !collected.iter().any(|(cid, _)| *cid == *id) {
                                 collected.push((*id, stream));
                             }
-                        } else if subtype == Some(b"Form") {
-                            if let Ok(res) = stream.dict.get(b"Resources") {
-                                collect_images_from_resources(doc, res, collected, depth + 1);
-                            }
+                        } else if subtype == Some(b"Form")
+                            && let Ok(res) = stream.dict.get(b"Resources")
+                        {
+                            collect_images_from_resources(doc, res, collected, depth + 1);
                         }
                     }
                     Object::Dictionary(_) => {
@@ -408,19 +408,20 @@ fn raster_to_png(
     let pixel_count = (width * height) as usize;
 
     if color_space == b"DeviceGray" {
-        if let Some(alpha) = smask_alpha {
-            if raw.len() >= pixel_count && alpha.len() >= pixel_count {
-                let mut rgba = Vec::with_capacity(pixel_count * 4);
-                for i in 0..pixel_count {
-                    let g = raw[i];
-                    let a = alpha[i];
-                    rgba.extend_from_slice(&[g, g, g, a]);
-                }
-                return encode_image_buffer_to_png(
-                    image::RgbaImage::from_raw(width, height, rgba)
-                        .ok_or("Failed to create RGBA buffer")?,
-                );
+        if let Some(alpha) = smask_alpha
+            && raw.len() >= pixel_count
+            && alpha.len() >= pixel_count
+        {
+            let mut rgba = Vec::with_capacity(pixel_count * 4);
+            for i in 0..pixel_count {
+                let g = raw[i];
+                let a = alpha[i];
+                rgba.extend_from_slice(&[g, g, g, a]);
             }
+            return encode_image_buffer_to_png(
+                image::RgbaImage::from_raw(width, height, rgba)
+                    .ok_or("Failed to create RGBA buffer")?,
+            );
         }
         if raw.len() >= pixel_count {
             let gray_buf = raw[..pixel_count].to_vec();
@@ -432,7 +433,7 @@ fn raster_to_png(
     } else if color_space == b"DeviceCMYK" {
         if raw.len() >= pixel_count * 4 {
             let mut rgb = Vec::with_capacity(pixel_count * 3);
-            for chunk in raw.chunks_exact(4).take(pixel_count) {
+            for chunk in raw.as_chunks::<4>().0.iter().take(pixel_count) {
                 let c = chunk[0] as f32 / 255.0;
                 let m = chunk[1] as f32 / 255.0;
                 let y = chunk[2] as f32 / 255.0;
@@ -450,21 +451,22 @@ fn raster_to_png(
         }
     } else {
         // Default DeviceRGB or ICCBased
-        if let Some(alpha) = smask_alpha {
-            if raw.len() >= pixel_count * 3 && alpha.len() >= pixel_count {
-                let mut rgba = Vec::with_capacity(pixel_count * 4);
-                for i in 0..pixel_count {
-                    let r = raw[i * 3];
-                    let g = raw[i * 3 + 1];
-                    let b = raw[i * 3 + 2];
-                    let a = alpha[i];
-                    rgba.extend_from_slice(&[r, g, b, a]);
-                }
-                return encode_image_buffer_to_png(
-                    image::RgbaImage::from_raw(width, height, rgba)
-                        .ok_or("Failed to create RGBA buffer")?,
-                );
+        if let Some(alpha) = smask_alpha
+            && raw.len() >= pixel_count * 3
+            && alpha.len() >= pixel_count
+        {
+            let mut rgba = Vec::with_capacity(pixel_count * 4);
+            for i in 0..pixel_count {
+                let r = raw[i * 3];
+                let g = raw[i * 3 + 1];
+                let b = raw[i * 3 + 2];
+                let a = alpha[i];
+                rgba.extend_from_slice(&[r, g, b, a]);
             }
+            return encode_image_buffer_to_png(
+                image::RgbaImage::from_raw(width, height, rgba)
+                    .ok_or("Failed to create RGBA buffer")?,
+            );
         }
 
         if raw.len() >= pixel_count * 3 {

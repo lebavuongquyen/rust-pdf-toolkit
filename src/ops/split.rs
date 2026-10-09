@@ -215,10 +215,10 @@ pub fn split_document_with_options(
     let mut inherited_piece_info = None;
     if options.inherit_piece_info && options.piece_info.is_none() {
         let mut temp_bytes = Vec::new();
-        if doc.clone().save_to(&mut temp_bytes).is_ok() {
-            if let Ok(Some(pi)) = get_piece_info(&temp_bytes) {
-                inherited_piece_info = Some(pi);
-            }
+        if doc.clone().save_to(&mut temp_bytes).is_ok()
+            && let Ok(Some(pi)) = get_piece_info(&temp_bytes)
+        {
+            inherited_piece_info = Some(pi);
         }
     }
 
@@ -270,26 +270,26 @@ pub fn split_document_with_options(
         }
 
         // Update Pages dictionary with new Kids and Count
-        if let Some(pages_obj) = sub_doc.objects.get_mut(&pages_id) {
-            if let Ok(pages_dict) = pages_obj.as_dict_mut() {
-                pages_dict.set("Count", kept_page_ids.len() as u32);
-                pages_dict.set(
-                    "Kids",
-                    kept_page_ids
-                        .iter()
-                        .copied()
-                        .map(Object::Reference)
-                        .collect::<Vec<_>>(),
-                );
-            }
+        if let Some(pages_obj) = sub_doc.objects.get_mut(&pages_id)
+            && let Ok(pages_dict) = pages_obj.as_dict_mut()
+        {
+            pages_dict.set("Count", kept_page_ids.len() as u32);
+            pages_dict.set(
+                "Kids",
+                kept_page_ids
+                    .iter()
+                    .copied()
+                    .map(Object::Reference)
+                    .collect::<Vec<_>>(),
+            );
         }
 
         // Ensure all kept pages have their Parent set to the root Pages ID
         for &page_id in &kept_page_ids {
-            if let Some(page_obj) = sub_doc.objects.get_mut(&page_id) {
-                if let Ok(page_dict) = page_obj.as_dict_mut() {
-                    page_dict.set("Parent", pages_id);
-                }
+            if let Some(page_obj) = sub_doc.objects.get_mut(&page_id)
+                && let Ok(page_dict) = page_obj.as_dict_mut()
+            {
+                page_dict.set("Parent", pages_id);
             }
         }
 

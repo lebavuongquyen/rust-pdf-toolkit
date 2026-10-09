@@ -37,3 +37,6 @@ rayon = "1.10"
 walkdir = "2.5"
 pdfium-bundled = "0.2"
 
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"

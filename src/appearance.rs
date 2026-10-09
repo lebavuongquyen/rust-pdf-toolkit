@@ -9,11 +9,30 @@ pub enum GraphicPosition {
     Left,
     #[serde(alias = "right", alias = "RIGHT")]
     Right,
-    #[serde(alias = "behind", alias = "BEHIND", alias = "background", alias = "Background")]
+    #[serde(
+        alias = "behind",
+        alias = "BEHIND",
+        alias = "background",
+        alias = "Background"
+    )]
     Behind,
-    #[serde(alias = "image_only", alias = "image-only", alias = "IMAGE_ONLY", alias = "imageOnly", alias = "image", alias = "Image")]
+    #[serde(
+        alias = "image_only",
+        alias = "image-only",
+        alias = "IMAGE_ONLY",
+        alias = "imageOnly",
+        alias = "image",
+        alias = "Image"
+    )]
     ImageOnly,
-    #[serde(alias = "text_only", alias = "text-only", alias = "TEXT_ONLY", alias = "textOnly", alias = "text", alias = "Text")]
+    #[serde(
+        alias = "text_only",
+        alias = "text-only",
+        alias = "TEXT_ONLY",
+        alias = "textOnly",
+        alias = "text",
+        alias = "Text"
+    )]
     TextOnly,
 }
 
@@ -261,10 +280,10 @@ impl PdfAppearance {
             super::appearance_renderer::replace_appearance(widget_mut, appearance_id);
         }
 
-        if let Some(encoded) = &options.image {
-            if let Ok(field_mut) = doc.get_object_mut(*field_id).and_then(|x| x.as_dict_mut()) {
-                field_mut.set("V", super::pdf_text(encoded));
-            }
+        if let Some(encoded) = &options.image
+            && let Ok(field_mut) = doc.get_object_mut(*field_id).and_then(|x| x.as_dict_mut())
+        {
+            field_mut.set("V", super::pdf_text(encoded));
         }
 
         super::save_document(&mut doc)

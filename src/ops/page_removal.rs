@@ -273,19 +273,18 @@ fn has_visible_annotations(doc: &Document, page_id: ObjectId) -> bool {
             _ => None,
         };
 
-        if let Some(obj) = annot_obj {
-            if let Ok(dict) = obj.as_dict() {
-                if let Ok(subtype) = dict.get(b"Subtype").and_then(Object::as_name) {
-                    // Visual annotation types that render content on screen
-                    match subtype {
-                        b"Widget" | b"Stamp" | b"Ink" | b"FreeText" | b"Text" | b"Highlight"
-                        | b"Underline" | b"StrikeOut" | b"Squiggly" | b"Square" | b"Circle"
-                        | b"Line" | b"Polygon" | b"PolyLine" | b"Caret" | b"Redact" => {
-                            return true;
-                        }
-                        _ => {}
-                    }
+        if let Some(obj) = annot_obj
+            && let Ok(dict) = obj.as_dict()
+            && let Ok(subtype) = dict.get(b"Subtype").and_then(Object::as_name)
+        {
+            // Visual annotation types that render content on screen
+            match subtype {
+                b"Widget" | b"Stamp" | b"Ink" | b"FreeText" | b"Text" | b"Highlight"
+                | b"Underline" | b"StrikeOut" | b"Squiggly" | b"Square" | b"Circle" | b"Line"
+                | b"Polygon" | b"PolyLine" | b"Caret" | b"Redact" => {
+                    return true;
                 }
+                _ => {}
             }
         }
     }
@@ -373,12 +372,12 @@ pub fn is_page_blank(doc: &Document, page_id: ObjectId, options: &BlankDetection
                 if let Some(Object::Array(arr)) = op.operands.first() {
                     let mut visible_text = false;
                     for item in arr {
-                        if let Object::String(bytes, _) = item {
-                            if !options.ignore_whitespace_only_text || !is_whitespace_string(bytes)
-                            {
-                                visible_text = true;
-                                break;
-                            }
+                        if let Object::String(bytes, _) = item
+                            && (!options.ignore_whitespace_only_text
+                                || !is_whitespace_string(bytes))
+                        {
+                            visible_text = true;
+                            break;
                         }
                     }
                     if visible_text {
@@ -433,7 +432,7 @@ pub fn remove_pdf_pages_in_doc(
 
     let mut to_remove_set = BTreeSet::new();
 
-    for (&p_num, _) in &all_pages {
+    for &p_num in all_pages.keys() {
         let mut should_remove = false;
 
         if options.remove_cover && p_num == 1 {
@@ -448,17 +447,17 @@ pub fn remove_pdf_pages_in_doc(
             should_remove = true;
         }
 
-        if let Some(ref sel) = options.pages {
-            if sel.matches(p_num, total_pages) {
-                should_remove = true;
-            }
+        if let Some(ref sel) = options.pages
+            && sel.matches(p_num, total_pages)
+        {
+            should_remove = true;
         }
 
         // Whitelist / Keep protection override
-        if let Some(ref keep_sel) = options.keep_pages {
-            if keep_sel.matches(p_num, total_pages) {
-                should_remove = false;
-            }
+        if let Some(ref keep_sel) = options.keep_pages
+            && keep_sel.matches(p_num, total_pages)
+        {
+            should_remove = false;
         }
 
         if should_remove {
@@ -535,52 +534,49 @@ pub fn remove_pdf_pages_in_doc(
     // Clean up AcroForm fields pointing to removed pages
     let mut fields_to_remove = HashSet::new();
     for (&id, obj) in &doc.objects {
-        if let Ok(dict) = obj.as_dict() {
-            if let Ok(p_ref) = dict.get(b"P").and_then(Object::as_reference) {
-                if removed_page_ids.contains(&p_ref) {
-                    fields_to_remove.insert(id);
-                }
-            }
+        if let Ok(dict) = obj.as_dict()
+            && let Ok(p_ref) = dict.get(b"P").and_then(Object::as_reference)
+            && removed_page_ids.contains(&p_ref)
+        {
+            fields_to_remove.insert(id);
         }
     }
 
-    if let Ok(catalog_dict) = doc.get_object(catalog_id).and_then(|o| o.as_dict()) {
-        if let Ok(acro_ref) = catalog_dict.get(b"AcroForm").and_then(Object::as_reference) {
-            if let Ok(acro_dict) = doc.get_object_mut(acro_ref).and_then(|o| o.as_dict_mut()) {
-                if let Ok(Object::Array(fields)) = acro_dict.get_mut(b"Fields") {
-                    fields.retain(|field_obj| {
-                        if let Ok(field_ref) = field_obj.as_reference() {
-                            !fields_to_remove.contains(&field_ref)
-                        } else {
-                            true
-                        }
-                    });
-                }
+    if let Ok(catalog_dict) = doc.get_object(catalog_id).and_then(|o| o.as_dict())
+        && let Ok(acro_ref) = catalog_dict.get(b"AcroForm").and_then(Object::as_reference)
+        && let Ok(acro_dict) = doc.get_object_mut(acro_ref).and_then(|o| o.as_dict_mut())
+        && let Ok(Object::Array(fields)) = acro_dict.get_mut(b"Fields")
+    {
+        fields.retain(|field_obj| {
+            if let Ok(field_ref) = field_obj.as_reference() {
+                !fields_to_remove.contains(&field_ref)
+            } else {
+                true
             }
-        }
+        });
     }
 
     // Update root Pages dictionary
-    if let Some(pages_obj) = doc.objects.get_mut(&pages_id) {
-        if let Ok(pages_dict) = pages_obj.as_dict_mut() {
-            pages_dict.set("Count", kept_page_ids.len() as u32);
-            pages_dict.set(
-                "Kids",
-                kept_page_ids
-                    .iter()
-                    .copied()
-                    .map(Object::Reference)
-                    .collect::<Vec<_>>(),
-            );
-        }
+    if let Some(pages_obj) = doc.objects.get_mut(&pages_id)
+        && let Ok(pages_dict) = pages_obj.as_dict_mut()
+    {
+        pages_dict.set("Count", kept_page_ids.len() as u32);
+        pages_dict.set(
+            "Kids",
+            kept_page_ids
+                .iter()
+                .copied()
+                .map(Object::Reference)
+                .collect::<Vec<_>>(),
+        );
     }
 
     // Ensure all kept pages have their Parent pointing to root Pages ID
     for &page_id in &kept_page_ids {
-        if let Some(page_obj) = doc.objects.get_mut(&page_id) {
-            if let Ok(page_dict) = page_obj.as_dict_mut() {
-                page_dict.set("Parent", pages_id);
-            }
+        if let Some(page_obj) = doc.objects.get_mut(&page_id)
+            && let Ok(page_dict) = page_obj.as_dict_mut()
+        {
+            page_dict.set("Parent", pages_id);
         }
     }
 

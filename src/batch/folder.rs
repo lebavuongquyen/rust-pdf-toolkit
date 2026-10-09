@@ -141,17 +141,16 @@ pub fn scan_pdf_files<P: AsRef<Path>>(
     let mut pdfs = Vec::new();
     for entry in walker.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext.to_string_lossy().eq_ignore_ascii_case("pdf") {
-                    let file_name = path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    if matches_filter(&file_name, filter_pattern) {
-                        pdfs.push(path.to_path_buf());
-                    }
-                }
+        if path.is_file()
+            && let Some(ext) = path.extension()
+            && ext.to_string_lossy().eq_ignore_ascii_case("pdf")
+        {
+            let file_name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if matches_filter(&file_name, filter_pattern) {
+                pdfs.push(path.to_path_buf());
             }
         }
     }

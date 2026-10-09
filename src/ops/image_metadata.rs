@@ -135,41 +135,40 @@ fn extract_png_metadata(bytes: &[u8], target_keyword: &str) -> Result<Option<Val
 
         if c_type == b"tEXt" || c_type == b"iTXt" {
             let data = &bytes[data_start..data_end];
-            if let Some(null_pos) = data.iter().position(|&b| b == 0) {
-                if let Ok(kw) = std::str::from_utf8(&data[..null_pos]) {
-                    if kw.eq_ignore_ascii_case(target_keyword) {
-                        let text_slice = if c_type == b"tEXt" {
-                            &data[null_pos + 1..]
-                        } else {
-                            // iTXt has compression flag, method, language tag, translated keyword before text
-                            // find text starting after prefix null bytes
-                            let rest = &data[null_pos + 1..];
-                            if rest.len() >= 2 {
-                                let mut rest_pos = 2; // skip compression flag and method
-                                while rest_pos < rest.len() && rest[rest_pos] != 0 {
-                                    rest_pos += 1;
-                                }
-                                rest_pos += 1; // skip language tag null
-                                while rest_pos < rest.len() && rest[rest_pos] != 0 {
-                                    rest_pos += 1;
-                                }
-                                rest_pos += 1; // skip translated keyword null
-                                if rest_pos <= rest.len() {
-                                    &rest[rest_pos..]
-                                } else {
-                                    &[]
-                                }
-                            } else {
-                                &[]
-                            }
-                        };
-
-                        if let Ok(text) = std::str::from_utf8(text_slice) {
-                            if let Ok(val) = serde_json::from_str::<Value>(text) {
-                                return Ok(Some(val));
-                            }
+            if let Some(null_pos) = data.iter().position(|&b| b == 0)
+                && let Ok(kw) = std::str::from_utf8(&data[..null_pos])
+                && kw.eq_ignore_ascii_case(target_keyword)
+            {
+                let text_slice = if c_type == b"tEXt" {
+                    &data[null_pos + 1..]
+                } else {
+                    // iTXt has compression flag, method, language tag, translated keyword before text
+                    // find text starting after prefix null bytes
+                    let rest = &data[null_pos + 1..];
+                    if rest.len() >= 2 {
+                        let mut rest_pos = 2; // skip compression flag and method
+                        while rest_pos < rest.len() && rest[rest_pos] != 0 {
+                            rest_pos += 1;
                         }
+                        rest_pos += 1; // skip language tag null
+                        while rest_pos < rest.len() && rest[rest_pos] != 0 {
+                            rest_pos += 1;
+                        }
+                        rest_pos += 1; // skip translated keyword null
+                        if rest_pos <= rest.len() {
+                            &rest[rest_pos..]
+                        } else {
+                            &[]
+                        }
+                    } else {
+                        &[]
                     }
+                };
+
+                if let Ok(text) = std::str::from_utf8(text_slice)
+                    && let Ok(val) = serde_json::from_str::<Value>(text)
+                {
+                    return Ok(Some(val));
                 }
             }
         }
@@ -227,7 +226,7 @@ fn extract_jpeg_metadata(bytes: &[u8]) -> Result<Option<Value>, String> {
             // EOI (End of Image)
             break;
         }
-        if marker == 0x00 || (marker >= 0xD0 && marker <= 0xD7) {
+        if marker == 0x00 || (0xD0..=0xD7).contains(&marker) {
             // Restart markers or byte stuffing without length
             offset += 2;
             continue;
@@ -242,11 +241,7 @@ fn extract_jpeg_metadata(bytes: &[u8]) -> Result<Option<Value>, String> {
             // COM Marker
             let payload = &bytes[offset + 4..offset + 2 + length];
             if let Ok(text) = std::str::from_utf8(payload) {
-                let trimmed = if text.starts_with(JPEG_COM_PREFIX) {
-                    &text[JPEG_COM_PREFIX.len()..]
-                } else {
-                    text
-                };
+                let trimmed = text.strip_prefix(JPEG_COM_PREFIX).unwrap_or(text);
                 if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
                     return Ok(Some(val));
                 }

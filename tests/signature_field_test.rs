@@ -176,12 +176,12 @@ fn test_auto_create_field_and_sign_and_verify() {
     // Tamper byte near beginning of PDF
     tampered[10] = if tampered[10] == b'a' { b'b' } else { b'a' };
     let tampered_verifications = verify_pdf_signatures(&tampered);
-    if let Ok(results) = tampered_verifications {
-        if let Some(res) = results.first() {
-            assert!(
-                !res.digest_matched || !res.is_valid,
-                "Tampered document must fail verification"
-            );
-        }
+    if let Ok(results) = tampered_verifications
+        && let Some(res) = results.first()
+    {
+        assert!(
+            !res.digest_matched || !res.is_valid,
+            "Tampered document must fail verification"
+        );
     }
 }

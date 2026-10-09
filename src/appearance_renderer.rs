@@ -129,25 +129,25 @@ pub fn render_signature_appearance(
 ) -> Result<ObjectId, String> {
     let labels = options.labels.clone().unwrap_or_default();
     let mut lines = Vec::new();
-    if options.show_signer_name {
-        if let Some(name) = &options.signer_name {
-            lines.push(format!("{}{}", labels.signed_by, name));
-        }
+    if options.show_signer_name
+        && let Some(name) = &options.signer_name
+    {
+        lines.push(format!("{}{}", labels.signed_by, name));
     }
-    if options.show_date {
-        if let Some(date) = &options.date {
-            lines.push(format!("{}{}", labels.date, date));
-        }
+    if options.show_date
+        && let Some(date) = &options.date
+    {
+        lines.push(format!("{}{}", labels.date, date));
     }
-    if options.show_reason {
-        if let Some(reason) = &options.reason {
-            lines.push(format!("{}{}", labels.reason, reason));
-        }
+    if options.show_reason
+        && let Some(reason) = &options.reason
+    {
+        lines.push(format!("{}{}", labels.reason, reason));
     }
-    if options.show_location {
-        if let Some(loc) = &options.location {
-            lines.push(format!("{}{}", labels.location, loc));
-        }
+    if options.show_location
+        && let Some(loc) = &options.location
+    {
+        lines.push(format!("{}{}", labels.location, loc));
     }
     lines.extend(options.extra_lines.clone());
 
@@ -189,10 +189,10 @@ pub fn render_signature_appearance(
         pos => pos,
     };
 
-    if position == GraphicPosition::ImageOnly {
-        if let Some((image_id, iw, ih)) = image_info {
-            return Ok(ImageAppearanceRenderer.render_image(doc, image_id, width, height, iw, ih));
-        }
+    if position == GraphicPosition::ImageOnly
+        && let Some((image_id, iw, ih)) = image_info
+    {
+        return Ok(ImageAppearanceRenderer.render_image(doc, image_id, width, height, iw, ih));
     }
 
     let m = options.margin.unwrap_or(2.0).max(0.0);
@@ -292,33 +292,33 @@ pub fn render_signature_appearance(
                 "BT /F1 {fs:.2} Tf {r_f:.3} {g_f:.3} {b_f:.3} rg 1 0 0 1 {x:.2} {y:.2} Tm ({clean_line}) Tj ET\n"
             ));
         }
-    } else if let Some((tx, ty, tw, th)) = txt_box {
-        if has_text {
-            let n = lines.len();
-            let fs = options
-                .font_size
-                .unwrap_or_else(|| (th / (n.max(1) as f64 * 1.35)).clamp(6.0, 11.0));
-            let lh = fs * 1.3;
-            let tot_h = n as f64 * lh;
-            let start_y = ty + (th + tot_h) / 2.0 - fs;
-            let [r, g, b] = options.text_color.unwrap_or([20, 20, 20]);
-            let r_f = r as f64 / 255.0;
-            let g_f = g as f64 / 255.0;
-            let b_f = b as f64 / 255.0;
+    } else if let Some((tx, ty, tw, th)) = txt_box
+        && has_text
+    {
+        let n = lines.len();
+        let fs = options
+            .font_size
+            .unwrap_or_else(|| (th / (n.max(1) as f64 * 1.35)).clamp(6.0, 11.0));
+        let lh = fs * 1.3;
+        let tot_h = n as f64 * lh;
+        let start_y = ty + (th + tot_h) / 2.0 - fs;
+        let [r, g, b] = options.text_color.unwrap_or([20, 20, 20]);
+        let r_f = r as f64 / 255.0;
+        let g_f = g as f64 / 255.0;
+        let b_f = b as f64 / 255.0;
 
-            for (i, line) in lines.iter().enumerate() {
-                let y = start_y - (i as f64 * lh);
-                let clean_line = escape_pdf_string(line);
-                let lw = line.chars().count() as f64 * (fs * 0.52);
-                let x = match options.align {
-                    TextAlign::Left => tx,
-                    TextAlign::Center => tx + (tw - lw).max(0.0) / 2.0,
-                    TextAlign::Right => tx + (tw - lw).max(0.0),
-                };
-                stream_content.push_str(&format!(
+        for (i, line) in lines.iter().enumerate() {
+            let y = start_y - (i as f64 * lh);
+            let clean_line = escape_pdf_string(line);
+            let lw = line.chars().count() as f64 * (fs * 0.52);
+            let x = match options.align {
+                TextAlign::Left => tx,
+                TextAlign::Center => tx + (tw - lw).max(0.0) / 2.0,
+                TextAlign::Right => tx + (tw - lw).max(0.0),
+            };
+            stream_content.push_str(&format!(
                     "BT /F1 {fs:.2} Tf {r_f:.3} {g_f:.3} {b_f:.3} rg 1 0 0 1 {x:.2} {y:.2} Tm ({clean_line}) Tj ET\n"
                 ));
-            }
         }
     }
 

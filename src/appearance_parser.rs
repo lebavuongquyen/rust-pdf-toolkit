@@ -84,10 +84,10 @@ fn collect_appearance_streams(
     }
 
     for widget_id in crate::widget_ids(doc, field_id, field) {
-        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if let Ok(ap) = widget.get(b"AP") {
-                collect_from_ap_object(doc, ap, out, &mut visited, 0);
-            }
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict())
+            && let Ok(ap) = widget.get(b"AP")
+        {
+            collect_from_ap_object(doc, ap, out, &mut visited, 0);
         }
     }
 }
@@ -149,15 +149,13 @@ fn collect_from_form_object(
             }
 
             // Inspect nested Form XObjects in Resources
-            if let Ok(res_obj) = stream.dict.get(b"Resources") {
-                if let Some(res) = crate::get_dict_from_object(doc, res_obj) {
-                    if let Ok(xobjs_obj) = res.get(b"XObject") {
-                        if let Some(xobjs) = crate::get_dict_from_object(doc, xobjs_obj) {
-                            for (_name, xobj_val) in xobjs.iter() {
-                                collect_from_form_object(doc, xobj_val, out, visited, depth + 1);
-                            }
-                        }
-                    }
+            if let Ok(res_obj) = stream.dict.get(b"Resources")
+                && let Some(res) = crate::get_dict_from_object(doc, res_obj)
+                && let Ok(xobjs_obj) = res.get(b"XObject")
+                && let Some(xobjs) = crate::get_dict_from_object(doc, xobjs_obj)
+            {
+                for (_name, xobj_val) in xobjs.iter() {
+                    collect_from_form_object(doc, xobj_val, out, visited, depth + 1);
                 }
             }
         }
@@ -185,7 +183,9 @@ fn obj_to_string(obj: &Object) -> Option<String> {
         Object::String(bytes, _) => {
             if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
                 let u16s: Vec<u16> = bytes[2..]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                     .collect();
                 if let Ok(s) = String::from_utf16(&u16s) {
@@ -287,17 +287,17 @@ fn parse_operations(ops: &[Operation]) -> (Vec<SignatureTextLine>, Option<[f64; 
                 }
             }
             "Tj" => {
-                if let Some(s) = op.operands.first().and_then(obj_to_string) {
-                    if !s.trim().is_empty() {
-                        text_lines.push(SignatureTextLine {
-                            text: s,
-                            x: Some(text_pos.0),
-                            y: Some(text_pos.1),
-                            font_size: current_font_size,
-                            font_name: current_font.clone(),
-                            color_rgb: current_color,
-                        });
-                    }
+                if let Some(s) = op.operands.first().and_then(obj_to_string)
+                    && !s.trim().is_empty()
+                {
+                    text_lines.push(SignatureTextLine {
+                        text: s,
+                        x: Some(text_pos.0),
+                        y: Some(text_pos.1),
+                        font_size: current_font_size,
+                        font_name: current_font.clone(),
+                        color_rgb: current_color,
+                    });
                 }
             }
             "TJ" => {

@@ -1159,27 +1159,27 @@ struct InspectImageArgs {
 }
 
 fn decode_der_or_pem(data: &[u8]) -> Result<Vec<u8>, String> {
-    if let Ok(text) = std::str::from_utf8(data) {
-        if text.contains("-----BEGIN") {
-            let mut b64 = String::new();
-            let mut in_block = false;
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("-----BEGIN") {
-                    in_block = true;
-                    b64.clear();
-                } else if trimmed.starts_with("-----END") {
-                    break;
-                } else if in_block {
-                    b64.push_str(trimmed);
-                }
+    if let Ok(text) = std::str::from_utf8(data)
+        && text.contains("-----BEGIN")
+    {
+        let mut b64 = String::new();
+        let mut in_block = false;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("-----BEGIN") {
+                in_block = true;
+                b64.clear();
+            } else if trimmed.starts_with("-----END") {
+                break;
+            } else if in_block {
+                b64.push_str(trimmed);
             }
-            if !b64.is_empty() {
-                use base64::Engine;
-                return base64::engine::general_purpose::STANDARD
-                    .decode(&b64)
-                    .map_err(|e| format!("Base64 decode failed for PEM: {e}"));
-            }
+        }
+        if !b64.is_empty() {
+            use base64::Engine;
+            return base64::engine::general_purpose::STANDARD
+                .decode(&b64)
+                .map_err(|e| format!("Base64 decode failed for PEM: {e}"));
         }
     }
     Ok(data.to_vec())
@@ -1218,10 +1218,10 @@ fn handle_legacy_args(args: &[String]) -> Result<bool, Box<dyn std::error::Error
             None
         };
         let mut opts = FillOptions::new();
-        if let Some(pi_str) = piece_info.as_deref() {
-            if let Ok(val) = serde_json::from_str(pi_str) {
-                opts = opts.piece_info(val);
-            }
+        if let Some(pi_str) = piece_info.as_deref()
+            && let Ok(val) = serde_json::from_str(pi_str)
+        {
+            opts = opts.piece_info(val);
         }
         let (output, report) =
             fill_pdf_with_options(&template, &json, &opts).map_err(std::io::Error::other)?;
@@ -1564,7 +1564,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let (rotated_bytes, report) =
-                rotate_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                rotate_pdf_pages(&bytes, &opts).map_err(std::io::Error::other)?;
 
             if let Some(parent) = args.output.parent() {
                 fs::create_dir_all(parent)?;
@@ -1605,7 +1605,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let (result_bytes, report) =
-                remove_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                remove_pdf_pages(&bytes, &opts).map_err(std::io::Error::other)?;
 
             if let Some(parent) = args.output.parent() {
                 fs::create_dir_all(parent)?;
@@ -1684,7 +1684,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let (cropped_bytes, report) =
-                crop_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                crop_pdf_pages(&bytes, &opts).map_err(std::io::Error::other)?;
 
             if let Some(parent) = args.output.parent() {
                 fs::create_dir_all(parent)?;
@@ -1716,7 +1716,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if args.json {
                 let report =
-                    extract_text_structured(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                    extract_text_structured(&bytes, &opts).map_err(std::io::Error::other)?;
                 let json_str = serde_json::to_string_pretty(&report)?;
 
                 if let Some(out_path) = &args.output {
@@ -1734,7 +1734,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{json_str}");
                 }
             } else {
-                let text = extract_text(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                let text = extract_text(&bytes, &opts).map_err(std::io::Error::other)?;
 
                 if let Some(out_path) = &args.output {
                     if let Some(parent) = out_path.parent() {

@@ -459,7 +459,10 @@ impl PdfSigner {
         let prev_startxref = find_last_startxref(&base_pdf);
         let mut incremental = IncrementalDocument::create_from(base_pdf, doc);
         if let Some(prev) = prev_startxref {
-            incremental.new_document.trailer.set("Prev", Object::Integer(prev));
+            incremental
+                .new_document
+                .trailer
+                .set("Prev", Object::Integer(prev));
         }
         incremental
             .opt_clone_object_to_new_document(*field_id)
@@ -472,7 +475,13 @@ impl PdfSigner {
         }
 
         let signature_id = {
-            let max_new = incremental.new_document.objects.keys().map(|(id, _)| *id).max().unwrap_or(0);
+            let max_new = incremental
+                .new_document
+                .objects
+                .keys()
+                .map(|(id, _)| *id)
+                .max()
+                .unwrap_or(0);
             (max_base.max(max_new) + 1, 0)
         };
         incremental
@@ -537,22 +546,22 @@ impl PdfSigner {
         field_dict.set("Lock", Object::Dictionary(lock_dict));
 
         for wid in &widgets {
-            if let Some(w_obj) = incremental.new_document.objects.get_mut(wid) {
-                if let Ok(w_dict) = w_obj.as_dict_mut() {
-                    let f = w_dict
-                        .get(b"F")
-                        .ok()
-                        .and_then(|x| x.as_i64().ok())
-                        .unwrap_or(0);
-                    w_dict.set("V", Object::Reference(signature_id));
-                    w_dict.set("F", Object::Integer(f | 1 | 64));
-                    let w_ff = w_dict
-                        .get(b"Ff")
-                        .ok()
-                        .and_then(|x| x.as_i64().ok())
-                        .unwrap_or(0);
-                    w_dict.set("Ff", Object::Integer(w_ff | 1));
-                }
+            if let Some(w_obj) = incremental.new_document.objects.get_mut(wid)
+                && let Ok(w_dict) = w_obj.as_dict_mut()
+            {
+                let f = w_dict
+                    .get(b"F")
+                    .ok()
+                    .and_then(|x| x.as_i64().ok())
+                    .unwrap_or(0);
+                w_dict.set("V", Object::Reference(signature_id));
+                w_dict.set("F", Object::Integer(f | 1 | 64));
+                let w_ff = w_dict
+                    .get(b"Ff")
+                    .ok()
+                    .and_then(|x| x.as_i64().ok())
+                    .unwrap_or(0);
+                w_dict.set("Ff", Object::Integer(w_ff | 1));
             }
         }
 
@@ -887,12 +896,7 @@ fn build_cms(
     signer_info_parts.push(der_octet_string(signature));
     let signer_info = der_sequence(&signer_info_parts);
 
-    let certificates_body = concat(
-        &certificates
-            .iter()
-            .map(|cert| cert.clone())
-            .collect::<Vec<_>>(),
-    );
+    let certificates_body = concat(certificates);
     let certificates_field = der(0xA0, &certificates_body);
 
     let signed_data = der_sequence(&[
@@ -928,4 +932,3 @@ fn find_last_startxref(bytes: &[u8]) -> Option<i64> {
         .collect();
     num_str.parse::<i64>().ok()
 }
-

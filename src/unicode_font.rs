@@ -104,7 +104,8 @@ impl UnicodeFontContext {
             bfchar_lines
         );
 
-        let mut tounicode_stream = Stream::new(dictionary! {}, tounicode_stream_content.into_bytes());
+        let mut tounicode_stream =
+            Stream::new(dictionary! {}, tounicode_stream_content.into_bytes());
         let _ = tounicode_stream.compress();
         let tounicode_id = doc.add_object(tounicode_stream);
 
@@ -162,7 +163,10 @@ pub fn create_text_appearance_stream(
 
     let (content, font_resources) = if let Some(ctx) = unicode_ctx {
         let hex_tj = ctx.encode_text(val_str);
-        let content_str = format!("BT /{} {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td {} Tj ET\n", ctx.font_alias, hex_tj);
+        let content_str = format!(
+            "BT /{} {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td {} Tj ET\n",
+            ctx.font_alias, hex_tj
+        );
         let font_res = dictionary! {
             ctx.font_alias => Object::Reference(ctx.font_id),
         };

@@ -356,10 +356,10 @@ fn extract_font_info(doc: &Document, font_dict: &Dictionary) -> FontInfo {
     });
 
     if let Some(desc) = descriptor_obj {
-        if let Ok(weight) = desc.get(b"FontWeight").and_then(Object::as_i64) {
-            if weight >= 700 {
-                is_bold = true;
-            }
+        if let Ok(weight) = desc.get(b"FontWeight").and_then(Object::as_i64)
+            && weight >= 700
+        {
+            is_bold = true;
         }
         if let Ok(flags) = desc.get(b"Flags").and_then(Object::as_i64) {
             if (flags & 1) != 0 {
@@ -369,10 +369,10 @@ fn extract_font_info(doc: &Document, font_dict: &Dictionary) -> FontInfo {
                 is_italic = true;
             }
         }
-        if let Ok(angle) = desc.get(b"ItalicAngle").and_then(Object::as_float) {
-            if (angle as f64).abs() > 0.1 {
-                is_italic = true;
-            }
+        if let Ok(angle) = desc.get(b"ItalicAngle").and_then(Object::as_float)
+            && (angle as f64).abs() > 0.1
+        {
+            is_italic = true;
         }
     }
 
@@ -508,57 +508,57 @@ fn extract_page_raw_spans(
                 }
             }
             "rg" => {
-                if op.operands.len() >= 3 {
-                    if let (Ok(r), Ok(g), Ok(b)) = (
+                if op.operands.len() >= 3
+                    && let (Ok(r), Ok(g), Ok(b)) = (
                         op.operands[0].as_float(),
                         op.operands[1].as_float(),
                         op.operands[2].as_float(),
-                    ) {
-                        state.fill_color = ColorRgb::new(r as f64, g as f64, b as f64);
-                    }
+                    )
+                {
+                    state.fill_color = ColorRgb::new(r as f64, g as f64, b as f64);
                 }
             }
             "RG" => {
-                if op.operands.len() >= 3 {
-                    if let (Ok(r), Ok(g), Ok(b)) = (
+                if op.operands.len() >= 3
+                    && let (Ok(r), Ok(g), Ok(b)) = (
                         op.operands[0].as_float(),
                         op.operands[1].as_float(),
                         op.operands[2].as_float(),
-                    ) {
-                        state.stroke_color = ColorRgb::new(r as f64, g as f64, b as f64);
-                    }
+                    )
+                {
+                    state.stroke_color = ColorRgb::new(r as f64, g as f64, b as f64);
                 }
             }
             "k" => {
-                if op.operands.len() >= 4 {
-                    if let (Ok(c), Ok(m), Ok(y), Ok(k)) = (
+                if op.operands.len() >= 4
+                    && let (Ok(c), Ok(m), Ok(y), Ok(k)) = (
                         op.operands[0].as_float(),
                         op.operands[1].as_float(),
                         op.operands[2].as_float(),
                         op.operands[3].as_float(),
-                    ) {
-                        let (c, m, y, k) = (c as f64, m as f64, y as f64, k as f64);
-                        let r = (1.0 - c) * (1.0 - k);
-                        let g = (1.0 - m) * (1.0 - k);
-                        let b = (1.0 - y) * (1.0 - k);
-                        state.fill_color = ColorRgb::new(r, g, b);
-                    }
+                    )
+                {
+                    let (c, m, y, k) = (c as f64, m as f64, y as f64, k as f64);
+                    let r = (1.0 - c) * (1.0 - k);
+                    let g = (1.0 - m) * (1.0 - k);
+                    let b = (1.0 - y) * (1.0 - k);
+                    state.fill_color = ColorRgb::new(r, g, b);
                 }
             }
             "K" => {
-                if op.operands.len() >= 4 {
-                    if let (Ok(c), Ok(m), Ok(y), Ok(k)) = (
+                if op.operands.len() >= 4
+                    && let (Ok(c), Ok(m), Ok(y), Ok(k)) = (
                         op.operands[0].as_float(),
                         op.operands[1].as_float(),
                         op.operands[2].as_float(),
                         op.operands[3].as_float(),
-                    ) {
-                        let (c, m, y, k) = (c as f64, m as f64, y as f64, k as f64);
-                        let r = (1.0 - c) * (1.0 - k);
-                        let g = (1.0 - m) * (1.0 - k);
-                        let b = (1.0 - y) * (1.0 - k);
-                        state.stroke_color = ColorRgb::new(r, g, b);
-                    }
+                    )
+                {
+                    let (c, m, y, k) = (c as f64, m as f64, y as f64, k as f64);
+                    let r = (1.0 - c) * (1.0 - k);
+                    let g = (1.0 - m) * (1.0 - k);
+                    let b = (1.0 - y) * (1.0 - k);
+                    state.stroke_color = ColorRgb::new(r, g, b);
                 }
             }
 
@@ -569,15 +569,15 @@ fn extract_page_raw_spans(
             }
             "ET" => {}
             "Tf" => {
-                if let Some(font_name_obj) = op.operands.first() {
-                    if let Ok(name) = font_name_obj.as_name() {
-                        current_font_tag = name.to_vec();
-                    }
+                if let Some(font_name_obj) = op.operands.first()
+                    && let Ok(name) = font_name_obj.as_name()
+                {
+                    current_font_tag = name.to_vec();
                 }
-                if let Some(sz_obj) = op.operands.get(1) {
-                    if let Ok(sz) = sz_obj.as_float() {
-                        current_font_size = (sz as f64).abs().max(0.1);
-                    }
+                if let Some(sz_obj) = op.operands.get(1)
+                    && let Ok(sz) = sz_obj.as_float()
+                {
+                    current_font_size = (sz as f64).abs().max(0.1);
                 }
             }
             "Tm" => {
@@ -587,24 +587,22 @@ fn extract_page_raw_spans(
                 }
             }
             "Td" => {
-                if op.operands.len() >= 2 {
-                    if let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
-                    {
-                        let offset = Matrix::translation(tx as f64, ty as f64);
-                        tlm = offset.multiply(&tlm);
-                        tm = tlm.clone();
-                    }
+                if op.operands.len() >= 2
+                    && let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
+                {
+                    let offset = Matrix::translation(tx as f64, ty as f64);
+                    tlm = offset.multiply(&tlm);
+                    tm = tlm.clone();
                 }
             }
             "TD" => {
-                if op.operands.len() >= 2 {
-                    if let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
-                    {
-                        leading = -(ty as f64);
-                        let offset = Matrix::translation(tx as f64, ty as f64);
-                        tlm = offset.multiply(&tlm);
-                        tm = tlm.clone();
-                    }
+                if op.operands.len() >= 2
+                    && let (Ok(tx), Ok(ty)) = (op.operands[0].as_float(), op.operands[1].as_float())
+                {
+                    leading = -(ty as f64);
+                    let offset = Matrix::translation(tx as f64, ty as f64);
+                    tlm = offset.multiply(&tlm);
+                    tm = tlm.clone();
                 }
             }
             "T*" => {

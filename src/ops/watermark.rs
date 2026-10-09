@@ -148,20 +148,15 @@ impl LayerMode {
 }
 
 /// Page selection targeting which pages receive the watermark / numbering.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PageSelection {
+    #[default]
     All,
     Odd,
     Even,
     First,
     Last,
     Range(Vec<u32>),
-}
-
-impl Default for PageSelection {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 impl PageSelection {
@@ -204,7 +199,7 @@ impl PageSelection {
         match self {
             Self::All => true,
             Self::Odd => page_num % 2 == 1,
-            Self::Even => page_num % 2 == 0,
+            Self::Even => page_num.is_multiple_of(2),
             Self::First => page_num == 1,
             Self::Last => page_num == total_pages,
             Self::Range(list) => list.contains(&page_num),
@@ -213,9 +208,10 @@ impl PageSelection {
 }
 
 /// Watermark placement position.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum WatermarkPosition {
     Center,
+    #[default]
     Diagonal,
     TopLeft,
     TopCenter,
@@ -225,14 +221,14 @@ pub enum WatermarkPosition {
     BottomLeft,
     BottomCenter,
     BottomRight,
-    Custom { x: f64, y: f64 },
-    Tiled { step_x: f64, step_y: f64 },
-}
-
-impl Default for WatermarkPosition {
-    fn default() -> Self {
-        Self::Diagonal
-    }
+    Custom {
+        x: f64,
+        y: f64,
+    },
+    Tiled {
+        step_x: f64,
+        step_y: f64,
+    },
 }
 
 impl WatermarkPosition {
@@ -254,10 +250,10 @@ impl WatermarkPosition {
                 step_y: 220.0,
             },
             _ => {
-                if let Some((xs, ys)) = clean.split_once(',') {
-                    if let (Ok(x), Ok(y)) = (xs.trim().parse::<f64>(), ys.trim().parse::<f64>()) {
-                        return Self::Custom { x, y };
-                    }
+                if let Some((xs, ys)) = clean.split_once(',')
+                    && let (Ok(x), Ok(y)) = (xs.trim().parse::<f64>(), ys.trim().parse::<f64>())
+                {
+                    return Self::Custom { x, y };
                 }
                 Self::Diagonal
             }
@@ -1180,25 +1176,25 @@ fn get_page_box(doc: &Document, page_id: ObjectId) -> Result<(f64, f64, f64, f64
         .ok()
         .or_else(|| page_dict.get(b"MediaBox").ok());
 
-    if let Some(Object::Array(arr)) = box_obj {
-        if arr.len() >= 4 {
-            let parse_num = |obj: &Object| -> f64 {
-                match obj {
-                    Object::Integer(i) => *i as f64,
-                    Object::Real(r) => *r as f64,
-                    _ => 0.0,
-                }
-            };
-            let x1 = parse_num(&arr[0]);
-            let y1 = parse_num(&arr[1]);
-            let x2 = parse_num(&arr[2]);
-            let y2 = parse_num(&arr[3]);
-            let llx = x1.min(x2);
-            let lly = y1.min(y2);
-            let width = (x2 - x1).abs();
-            let height = (y2 - y1).abs();
-            return Ok((llx, lly, width, height));
-        }
+    if let Some(Object::Array(arr)) = box_obj
+        && arr.len() >= 4
+    {
+        let parse_num = |obj: &Object| -> f64 {
+            match obj {
+                Object::Integer(i) => *i as f64,
+                Object::Real(r) => *r as f64,
+                _ => 0.0,
+            }
+        };
+        let x1 = parse_num(&arr[0]);
+        let y1 = parse_num(&arr[1]);
+        let x2 = parse_num(&arr[2]);
+        let y2 = parse_num(&arr[3]);
+        let llx = x1.min(x2);
+        let lly = y1.min(y2);
+        let width = (x2 - x1).abs();
+        let height = (y2 - y1).abs();
+        return Ok((llx, lly, width, height));
     }
 
     // Default standard A4 in points
@@ -1294,24 +1290,24 @@ fn create_watermark_image_xobject(
     img_bytes: &[u8],
 ) -> Result<(ObjectId, f64, f64), String> {
     // Try fast JPEG detection first
-    if img_bytes.starts_with(&[0xFF, 0xD8]) {
-        if let Ok(dyn_img) = image::load_from_memory(img_bytes) {
-            let width = dyn_img.width() as f64;
-            let height = dyn_img.height() as f64;
-            let obj_id = doc.add_object(Stream::new(
-                dictionary! {
-                    "Type" => "XObject",
-                    "Subtype" => "Image",
-                    "Width" => width as i64,
-                    "Height" => height as i64,
-                    "ColorSpace" => "DeviceRGB",
-                    "BitsPerComponent" => 8,
-                    "Filter" => "DCTDecode",
-                },
-                img_bytes.to_vec(),
-            ));
-            return Ok((obj_id, width, height));
-        }
+    if img_bytes.starts_with(&[0xFF, 0xD8])
+        && let Ok(dyn_img) = image::load_from_memory(img_bytes)
+    {
+        let width = dyn_img.width() as f64;
+        let height = dyn_img.height() as f64;
+        let obj_id = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => width as i64,
+                "Height" => height as i64,
+                "ColorSpace" => "DeviceRGB",
+                "BitsPerComponent" => 8,
+                "Filter" => "DCTDecode",
+            },
+            img_bytes.to_vec(),
+        ));
+        return Ok((obj_id, width, height));
     }
 
     // Generic fallback: load with image crate and encode to JPEG

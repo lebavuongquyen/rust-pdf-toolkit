@@ -170,11 +170,11 @@ pub fn insert_locked_piece_info(
         }
     };
 
-    if let Some(r_id) = existing_ref {
-        if let Ok(piece_dict) = doc.get_object_mut(r_id).and_then(|o| o.as_dict_mut()) {
-            piece_dict.set(app_name.as_bytes().to_vec(), Object::Dictionary(app_dict));
-            return Ok(());
-        }
+    if let Some(r_id) = existing_ref
+        && let Ok(piece_dict) = doc.get_object_mut(r_id).and_then(|o| o.as_dict_mut())
+    {
+        piece_dict.set(app_name.as_bytes().to_vec(), Object::Dictionary(app_dict));
+        return Ok(());
     }
 
     let catalog = doc
@@ -197,7 +197,7 @@ pub fn insert_locked_piece_info(
     Ok(())
 }
 
-fn extract_bytes_from_object<'a>(obj: &'a Object) -> Option<&'a [u8]> {
+fn extract_bytes_from_object(obj: &Object) -> Option<&[u8]> {
     match obj {
         Object::String(bytes, _) => Some(bytes.as_slice()),
         _ => None,

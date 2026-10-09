@@ -50,7 +50,7 @@ fn extract_contents_hex(pdf: &[u8]) -> Vec<u8> {
         .expect("Foxit Contents end");
 
     let hex = &pdf[hex_start..hex_end];
-    assert!(hex.len() % 2 == 0);
+    assert!(hex.len().is_multiple_of(2));
     (0..hex.len())
         .step_by(2)
         .map(|i| {

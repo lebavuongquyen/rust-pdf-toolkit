@@ -80,7 +80,7 @@ fn extracts_image_field_value_when_filled() {
     assert_eq!(image_field_before.value, None);
 
     // Read a test JPEG image
-    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let img_bytes = fs::read("tests/fixtures/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
     let data_url = format!("data:image/jpeg;base64,{}", b64);
 
@@ -104,7 +104,7 @@ fn extracts_image_field_value_when_filled() {
     assert!(val_str.starts_with("data:image/jpeg;base64,"));
 
     // Verify fixed-image.pdf appearance extraction
-    let fixed_bytes = fs::read("output/fixed-image.pdf").expect("fixed-image");
+    let fixed_bytes = fs::read("tests/fixtures/fixed-image.pdf").expect("fixed-image");
     let fixed_fields = get_form_fields(&fixed_bytes).expect("fields");
     let avatar_field = fixed_fields
         .iter()
@@ -209,7 +209,7 @@ fn extracts_all_field_types_values_when_filled() {
         .map(|o| o.value.clone())
         .unwrap_or_else(|| "Choice1".into());
 
-    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let img_bytes = fs::read("tests/fixtures/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
     let data_url = format!("data:image/jpeg;base64,{}", b64);
 
@@ -349,7 +349,7 @@ fn pdf_appearance_sets_custom_signature_layout() {
     use base64::Engine;
 
     let template = fs::read("reference/template_8field.pdf").expect("template_8field.pdf");
-    let img_bytes = fs::read("output/extracted-image.jpg").expect("sample image");
+    let img_bytes = fs::read("tests/fixtures/extracted-image.jpg").expect("sample image");
     let b64 = base64::engine::general_purpose::STANDARD.encode(&img_bytes);
     let data_url = format!("data:image/jpeg;base64,{}", b64);
 
@@ -432,7 +432,10 @@ fn test_template_8field_choice_fields_discovery() {
     let template = fs::read("reference/template_8field.pdf").expect("template_8field");
     let fields = get_form_fields(&template).expect("fields");
 
-    let combo = fields.iter().find(|f| f.name == "Combo Box0").expect("combo");
+    let combo = fields
+        .iter()
+        .find(|f| f.name == "Combo Box0")
+        .expect("combo");
     assert_eq!(combo.field_type, FormFieldType::ComboBox);
     assert!(combo.multi_select.is_some());
     assert!(combo.editable.is_some());
@@ -445,7 +448,10 @@ fn test_template_8field_choice_fields_discovery() {
     assert_eq!(list.editable, list.custom_option);
 
     // Non-choice field has None
-    let text = fields.iter().find(|f| f.name == "Text Field0").expect("text");
+    let text = fields
+        .iter()
+        .find(|f| f.name == "Text Field0")
+        .expect("text");
     assert_eq!(text.multi_select, None);
     assert_eq!(text.editable, None);
     assert_eq!(text.custom_option, None);
@@ -453,7 +459,7 @@ fn test_template_8field_choice_fields_discovery() {
 
 #[test]
 fn test_choice_fields_multi_select_and_custom_options() {
-    use lopdf::{Document, Object, Dictionary};
+    use lopdf::{Dictionary, Document, Object};
 
     let mut doc = Document::with_version("1.7");
     let pages_id = doc.new_object_id();
@@ -467,12 +473,18 @@ fn test_choice_fields_multi_select_and_custom_options() {
     list_dict.set("FT", Object::Name(b"Ch".to_vec()));
     list_dict.set("T", Object::string_literal("multi_list"));
     list_dict.set("Ff", Object::Integer(list_flags as i64));
-    list_dict.set("Opt", Object::Array(vec![
-        Object::string_literal("A"),
-        Object::string_literal("B"),
-        Object::string_literal("C"),
-    ]));
-    list_dict.set("Rect", Object::Array(vec![10.into(), 10.into(), 100.into(), 100.into()]));
+    list_dict.set(
+        "Opt",
+        Object::Array(vec![
+            Object::string_literal("A"),
+            Object::string_literal("B"),
+            Object::string_literal("C"),
+        ]),
+    );
+    list_dict.set(
+        "Rect",
+        Object::Array(vec![10.into(), 10.into(), 100.into(), 100.into()]),
+    );
     let list_id = doc.add_object(list_dict);
 
     // 2. Single-select ComboBox with editable / custom option allowed (Bit 18 Combo: 1<<17, Bit 19 Edit: 1<<18)
@@ -483,11 +495,17 @@ fn test_choice_fields_multi_select_and_custom_options() {
     combo_dict.set("FT", Object::Name(b"Ch".to_vec()));
     combo_dict.set("T", Object::string_literal("editable_combo"));
     combo_dict.set("Ff", Object::Integer(combo_flags as i64));
-    combo_dict.set("Opt", Object::Array(vec![
-        Object::string_literal("X"),
-        Object::string_literal("Y"),
-    ]));
-    combo_dict.set("Rect", Object::Array(vec![10.into(), 110.into(), 100.into(), 150.into()]));
+    combo_dict.set(
+        "Opt",
+        Object::Array(vec![
+            Object::string_literal("X"),
+            Object::string_literal("Y"),
+        ]),
+    );
+    combo_dict.set(
+        "Rect",
+        Object::Array(vec![10.into(), 110.into(), 100.into(), 150.into()]),
+    );
     let combo_id = doc.add_object(combo_dict);
 
     // 3. Regular non-editable single-select ComboBox (Bit 18 Combo: 1<<17)
@@ -498,23 +516,35 @@ fn test_choice_fields_multi_select_and_custom_options() {
     s_combo_dict.set("FT", Object::Name(b"Ch".to_vec()));
     s_combo_dict.set("T", Object::string_literal("standard_combo"));
     s_combo_dict.set("Ff", Object::Integer(standard_combo_flags as i64));
-    s_combo_dict.set("Opt", Object::Array(vec![
-        Object::string_literal("Opt1"),
-        Object::string_literal("Opt2"),
-    ]));
-    s_combo_dict.set("Rect", Object::Array(vec![10.into(), 160.into(), 100.into(), 200.into()]));
+    s_combo_dict.set(
+        "Opt",
+        Object::Array(vec![
+            Object::string_literal("Opt1"),
+            Object::string_literal("Opt2"),
+        ]),
+    );
+    s_combo_dict.set(
+        "Rect",
+        Object::Array(vec![10.into(), 160.into(), 100.into(), 200.into()]),
+    );
     let s_combo_id = doc.add_object(s_combo_dict);
 
     // Page
     let mut page_dict = Dictionary::new();
     page_dict.set("Type", Object::Name(b"Page".to_vec()));
     page_dict.set("Parent", Object::Reference(pages_id));
-    page_dict.set("MediaBox", Object::Array(vec![0.into(), 0.into(), 600.into(), 800.into()]));
-    page_dict.set("Annots", Object::Array(vec![
-        Object::Reference(list_id),
-        Object::Reference(combo_id),
-        Object::Reference(s_combo_id),
-    ]));
+    page_dict.set(
+        "MediaBox",
+        Object::Array(vec![0.into(), 0.into(), 600.into(), 800.into()]),
+    );
+    page_dict.set(
+        "Annots",
+        Object::Array(vec![
+            Object::Reference(list_id),
+            Object::Reference(combo_id),
+            Object::Reference(s_combo_id),
+        ]),
+    );
     doc.objects.insert(page_id, Object::Dictionary(page_dict));
 
     // Pages
@@ -527,19 +557,24 @@ fn test_choice_fields_multi_select_and_custom_options() {
     // Catalog & AcroForm
     let acroform_id = doc.new_object_id();
     let mut acroform_dict = Dictionary::new();
-    acroform_dict.set("Fields", Object::Array(vec![
-        Object::Reference(list_id),
-        Object::Reference(combo_id),
-        Object::Reference(s_combo_id),
-    ]));
-    doc.objects.insert(acroform_id, Object::Dictionary(acroform_dict));
+    acroform_dict.set(
+        "Fields",
+        Object::Array(vec![
+            Object::Reference(list_id),
+            Object::Reference(combo_id),
+            Object::Reference(s_combo_id),
+        ]),
+    );
+    doc.objects
+        .insert(acroform_id, Object::Dictionary(acroform_dict));
 
     let catalog_id = doc.new_object_id();
     let mut catalog_dict = Dictionary::new();
     catalog_dict.set("Type", Object::Name(b"Catalog".to_vec()));
     catalog_dict.set("Pages", Object::Reference(pages_id));
     catalog_dict.set("AcroForm", Object::Reference(acroform_id));
-    doc.objects.insert(catalog_id, Object::Dictionary(catalog_dict));
+    doc.objects
+        .insert(catalog_id, Object::Dictionary(catalog_dict));
     doc.trailer.set("Root", Object::Reference(catalog_id));
 
     let mut pdf_bytes = Vec::new();
@@ -575,20 +610,35 @@ fn test_choice_fields_multi_select_and_custom_options() {
         "editable_combo": "Custom Value Z",
         "multi_list": ["A", "Custom Value 123"],
     });
-    let (filled_bytes, report) = pdffiller_core::fill_pdf(&pdf_bytes, &fill_data.to_string(), None).expect("fill custom options");
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&pdf_bytes, &fill_data.to_string(), None)
+        .expect("fill custom options");
     assert_eq!(report.filled_count(), 2);
 
     let filled_fields = get_form_fields(&filled_bytes).expect("get filled fields");
-    let filled_combo = filled_fields.iter().find(|f| f.name == "editable_combo").unwrap();
-    assert_eq!(filled_combo.value, Some(serde_json::Value::String("Custom Value Z".into())));
+    let filled_combo = filled_fields
+        .iter()
+        .find(|f| f.name == "editable_combo")
+        .unwrap();
+    assert_eq!(
+        filled_combo.value,
+        Some(serde_json::Value::String("Custom Value Z".into()))
+    );
 
     // Fill test: standard_combo marks invalid when providing non-existent option
     let invalid_fill = serde_json::json!({
         "standard_combo": "Not In List",
     });
-    let (_pdf, report_invalid) = pdffiller_core::fill_pdf(&pdf_bytes, &invalid_fill.to_string(), None).expect("fill returns report");
+    let (_pdf, report_invalid) =
+        pdffiller_core::fill_pdf(&pdf_bytes, &invalid_fill.to_string(), None)
+            .expect("fill returns report");
     assert_eq!(report_invalid.filled_count(), 0);
     assert_eq!(report_invalid.fields.len(), 1);
-    assert_eq!(report_invalid.fields[0].status, pdffiller_core::FieldStatus::Invalid);
-    assert_eq!(report_invalid.fields[0].reason.as_deref(), Some("Choice option not found"));
+    assert_eq!(
+        report_invalid.fields[0].status,
+        pdffiller_core::FieldStatus::Invalid
+    );
+    assert_eq!(
+        report_invalid.fields[0].reason.as_deref(),
+        Some("Choice option not found")
+    );
 }

@@ -1,16 +1,21 @@
 extern crate pdftoolkit_core as pdffiller_core;
 use pdffiller_core::{
-    fill_pdf_with_options, get_form_fields, CertificateSigner, FillOptions, FormFieldType,
-    PdfSigner,
+    CertificateSigner, FillOptions, FormFieldType, PdfSigner, fill_pdf_with_options,
+    get_form_fields,
 };
 use std::fs;
 
 #[test]
 fn test_golden_enterprise_form_discovery() {
-    let bytes = fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
+    let bytes =
+        fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
     let fields = get_form_fields(&bytes).expect("get_form_fields");
 
-    assert_eq!(fields.len(), 14, "Expected 14 fields in golden enterprise form");
+    assert_eq!(
+        fields.len(),
+        14,
+        "Expected 14 fields in golden enterprise form"
+    );
 
     let field_map: std::collections::HashMap<_, _> =
         fields.into_iter().map(|f| (f.name.clone(), f)).collect();
@@ -27,7 +32,9 @@ fn test_golden_enterprise_form_discovery() {
     assert_eq!(email_f.field_type, FormFieldType::Text);
     assert_eq!(
         email_f.value,
-        Some(serde_json::Value::String("nguyen.vana@enterprise.vn".into()))
+        Some(serde_json::Value::String(
+            "nguyen.vana@enterprise.vn".into()
+        ))
     );
 
     let phone_f = field_map.get("phone").expect("phone");
@@ -41,7 +48,9 @@ fn test_golden_enterprise_form_discovery() {
     assert_eq!(title_f.field_type, FormFieldType::Text);
     assert_eq!(
         title_f.value,
-        Some(serde_json::Value::String("Senior Rust & Cloud Architect".into()))
+        Some(serde_json::Value::String(
+            "Senior Rust & Cloud Architect".into()
+        ))
     );
 
     // 2. Date field
@@ -86,25 +95,23 @@ fn test_golden_enterprise_form_discovery() {
 
     let agree_f = field_map.get("agree_terms").expect("agree_terms");
     assert_eq!(agree_f.field_type, FormFieldType::Checkbox);
-    assert_eq!(
-        agree_f.value,
-        Some(serde_json::Value::String("Yes".into()))
-    );
+    assert_eq!(agree_f.value, Some(serde_json::Value::String("Yes".into())));
 
     let news_f = field_map.get("newsletter").expect("newsletter");
     assert_eq!(news_f.field_type, FormFieldType::Checkbox);
-    assert_eq!(
-        news_f.value,
-        Some(serde_json::Value::String("Yes".into()))
-    );
+    assert_eq!(news_f.value, Some(serde_json::Value::String("Yes".into())));
 
     // 6. Signatures (Applicant & Manager)
-    let sig_app = field_map.get("Signature_Applicant").expect("Signature_Applicant");
+    let sig_app = field_map
+        .get("Signature_Applicant")
+        .expect("Signature_Applicant");
     assert_eq!(sig_app.field_type, FormFieldType::Signature);
     assert_eq!(sig_app.signed, Some(false));
     assert!(!sig_app.read_only);
 
-    let sig_mgr = field_map.get("Signature_Manager").expect("Signature_Manager");
+    let sig_mgr = field_map
+        .get("Signature_Manager")
+        .expect("Signature_Manager");
     assert_eq!(sig_mgr.field_type, FormFieldType::Signature);
     assert_eq!(sig_mgr.signed, Some(false));
     assert!(!sig_mgr.read_only);
@@ -112,7 +119,8 @@ fn test_golden_enterprise_form_discovery() {
 
 #[test]
 fn test_golden_enterprise_form_flattening_preserves_signatures() {
-    let bytes = fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
+    let bytes =
+        fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
 
     // Flatten form fields
     let opt = FillOptions::new().flatten(true);
@@ -142,7 +150,8 @@ fn test_golden_enterprise_form_flattening_preserves_signatures() {
 
 #[test]
 fn test_golden_enterprise_form_signing_after_flatten() {
-    let bytes = fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
+    let bytes =
+        fs::read("reference/golden_enterprise_form.pdf").expect("golden_enterprise_form.pdf");
 
     // Flatten first
     let opt = FillOptions::new().flatten(true);
@@ -173,7 +182,10 @@ fn test_golden_enterprise_form_signing_after_flatten() {
     assert_eq!(applicant_f.signed, Some(true));
     assert!(applicant_f.read_only);
     assert_eq!(
-        applicant_f.signature.as_ref().and_then(|s| s.reason.as_deref()),
+        applicant_f
+            .signature
+            .as_ref()
+            .and_then(|s| s.reason.as_deref()),
         Some("Enterprise Employment Application Sign-off")
     );
 

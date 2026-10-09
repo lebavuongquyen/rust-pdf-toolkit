@@ -134,7 +134,9 @@ fn object_text(value: &Object) -> Option<String> {
         Object::String(bytes, _) => {
             if bytes.starts_with(&[0xfe, 0xff]) {
                 let units: Vec<u16> = bytes[2..]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|x| u16::from_be_bytes([x[0], x[1]]))
                     .collect();
                 String::from_utf16(&units).ok()
@@ -757,10 +759,10 @@ fn get_dict_from_object<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Di
 
 fn field_has_image_appearance(doc: &Document, field_id: ObjectId, field: &Dictionary) -> bool {
     let check_dict = |d: &Dictionary| -> bool {
-        if let Ok(Object::Dictionary(mk)) = d.get(b"MK") {
-            if mk.get(b"I").is_ok() || mk.get(b"IF").is_ok() {
-                return true;
-            }
+        if let Ok(Object::Dictionary(mk)) = d.get(b"MK")
+            && (mk.get(b"I").is_ok() || mk.get(b"IF").is_ok())
+        {
+            return true;
         }
         false
     };
@@ -770,10 +772,10 @@ fn field_has_image_appearance(doc: &Document, field_id: ObjectId, field: &Dictio
     }
 
     for widget_id in widget_ids(doc, field_id, field) {
-        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if check_dict(widget) {
-                return true;
-            }
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict())
+            && check_dict(widget)
+        {
+            return true;
         }
     }
 
@@ -803,20 +805,15 @@ fn find_image_stream_in_object<'a>(
                 if !stream.content.is_empty() {
                     return Some(stream);
                 }
-            } else if subtype == Some(b"Form") {
-                if let Ok(res_obj) = stream.dict.get(b"Resources") {
-                    if let Some(res) = get_dict_from_object(doc, res_obj) {
-                        if let Ok(xobjs_obj) = res.get(b"XObject") {
-                            if let Some(xobjs) = get_dict_from_object(doc, xobjs_obj) {
-                                for (_name, xobj_val) in xobjs.iter() {
-                                    if let Some(found) =
-                                        find_image_stream_in_object(doc, xobj_val, depth + 1)
-                                    {
-                                        return Some(found);
-                                    }
-                                }
-                            }
-                        }
+            } else if subtype == Some(b"Form")
+                && let Ok(res_obj) = stream.dict.get(b"Resources")
+                && let Some(res) = get_dict_from_object(doc, res_obj)
+                && let Ok(xobjs_obj) = res.get(b"XObject")
+                && let Some(xobjs) = get_dict_from_object(doc, xobjs_obj)
+            {
+                for (_name, xobj_val) in xobjs.iter() {
+                    if let Some(found) = find_image_stream_in_object(doc, xobj_val, depth + 1) {
+                        return Some(found);
                     }
                 }
             }
@@ -824,10 +821,10 @@ fn find_image_stream_in_object<'a>(
         }
         Object::Dictionary(dict) => {
             for (key, val) in dict.iter() {
-                if key != b"Off" {
-                    if let Some(found) = find_image_stream_in_object(doc, val, depth + 1) {
-                        return Some(found);
-                    }
+                if key != b"Off"
+                    && let Some(found) = find_image_stream_in_object(doc, val, depth + 1)
+                {
+                    return Some(found);
                 }
             }
             None
@@ -867,27 +864,27 @@ fn find_field_image_stream<'a>(
     field_id: ObjectId,
     field: &'a Dictionary,
 ) -> Option<&'a Stream> {
-    if let Ok(ap) = field.get(b"AP") {
-        if let Some(found) = find_image_stream_in_ap(doc, ap) {
-            return Some(found);
-        }
+    if let Ok(ap) = field.get(b"AP")
+        && let Some(found) = find_image_stream_in_ap(doc, ap)
+    {
+        return Some(found);
     }
-    if let Ok(mk) = field.get(b"MK") {
-        if let Some(found) = find_image_stream_in_mk(doc, mk) {
-            return Some(found);
-        }
+    if let Ok(mk) = field.get(b"MK")
+        && let Some(found) = find_image_stream_in_mk(doc, mk)
+    {
+        return Some(found);
     }
     for widget_id in widget_ids(doc, field_id, field) {
         if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if let Ok(ap) = widget.get(b"AP") {
-                if let Some(found) = find_image_stream_in_ap(doc, ap) {
-                    return Some(found);
-                }
+            if let Ok(ap) = widget.get(b"AP")
+                && let Some(found) = find_image_stream_in_ap(doc, ap)
+            {
+                return Some(found);
             }
-            if let Ok(mk) = widget.get(b"MK") {
-                if let Some(found) = find_image_stream_in_mk(doc, mk) {
-                    return Some(found);
-                }
+            if let Ok(mk) = widget.get(b"MK")
+                && let Some(found) = find_image_stream_in_mk(doc, mk)
+            {
+                return Some(found);
             }
         }
     }
@@ -895,17 +892,14 @@ fn find_field_image_stream<'a>(
 }
 
 fn extract_image_value(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Option<Value> {
-    if let Some(val) = field_value(field, b"V") {
-        if let Some(s) = val.as_str() {
-            if !s.is_empty() {
-                if s.starts_with("data:image/") {
-                    return Some(Value::String(s.to_string()));
-                } else if s.len() > 20
-                    && base64::engine::general_purpose::STANDARD.decode(s).is_ok()
-                {
-                    return Some(Value::String(format!("data:image/jpeg;base64,{}", s)));
-                }
-            }
+    if let Some(val) = field_value(field, b"V")
+        && let Some(s) = val.as_str()
+        && !s.is_empty()
+    {
+        if s.starts_with("data:image/") {
+            return Some(Value::String(s.to_string()));
+        } else if s.len() > 20 && base64::engine::general_purpose::STANDARD.decode(s).is_ok() {
+            return Some(Value::String(format!("data:image/jpeg;base64,{}", s)));
         }
     }
 
@@ -1017,10 +1011,10 @@ fn parse_date_format_from_js(js: &str) -> Option<String> {
             if let Some(open) = rest.find('(') {
                 let inside = rest[open + 1..].trim_start();
                 let num_str: String = inside.chars().take_while(|c| c.is_ascii_digit()).collect();
-                if let Ok(idx) = num_str.parse::<usize>() {
-                    if let Some(fmt) = acrobat_standard_date_format(idx) {
-                        return Some(fmt.to_string());
-                    }
+                if let Ok(idx) = num_str.parse::<usize>()
+                    && let Some(fmt) = acrobat_standard_date_format(idx)
+                {
+                    return Some(fmt.to_string());
                 }
             }
         }
@@ -1036,35 +1030,31 @@ fn date_format_from_aa(doc: &Document, aa: &Dictionary) -> Option<String> {
         b"V".as_slice(),
         b"C".as_slice(),
     ] {
-        if let Ok(action) = aa.get(key) {
-            if let Some(js) = javascript_text(doc, action) {
-                if let Some(fmt) = parse_date_format_from_js(&js) {
-                    return Some(fmt);
-                }
-            }
+        if let Ok(action) = aa.get(key)
+            && let Some(js) = javascript_text(doc, action)
+            && let Some(fmt) = parse_date_format_from_js(&js)
+        {
+            return Some(fmt);
         }
     }
     None
 }
 
 fn field_date_format(doc: &Document, field_id: ObjectId, field: &Dictionary) -> Option<String> {
-    if let Ok(aa_obj) = field.get(b"AA") {
-        if let Some(aa) = get_dict_from_object(doc, aa_obj) {
-            if let Some(fmt) = date_format_from_aa(doc, aa) {
-                return Some(fmt);
-            }
-        }
+    if let Ok(aa_obj) = field.get(b"AA")
+        && let Some(aa) = get_dict_from_object(doc, aa_obj)
+        && let Some(fmt) = date_format_from_aa(doc, aa)
+    {
+        return Some(fmt);
     }
 
     for widget_id in widget_ids(doc, field_id, field) {
-        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if let Ok(aa_obj) = widget.get(b"AA") {
-                if let Some(aa) = get_dict_from_object(doc, aa_obj) {
-                    if let Some(fmt) = date_format_from_aa(doc, aa) {
-                        return Some(fmt);
-                    }
-                }
-            }
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict())
+            && let Ok(aa_obj) = widget.get(b"AA")
+            && let Some(aa) = get_dict_from_object(doc, aa_obj)
+            && let Some(fmt) = date_format_from_aa(doc, aa)
+        {
+            return Some(fmt);
         }
     }
 
@@ -1076,21 +1066,20 @@ fn field_has_date_javascript(doc: &Document, field_id: ObjectId, field: &Diction
         return true;
     }
     let check_dict = |d: &Dictionary| -> bool {
-        if let Ok(aa_obj) = d.get(b"AA") {
-            if let Some(aa) = get_dict_from_object(doc, aa_obj) {
-                for key in [
-                    b"K".as_slice(),
-                    b"F".as_slice(),
-                    b"V".as_slice(),
-                    b"C".as_slice(),
-                ] {
-                    if let Ok(action) = aa.get(key) {
-                        if let Some(js) = javascript_text(doc, action) {
-                            if js.contains("AFDate_") || js.contains("util.printd") {
-                                return true;
-                            }
-                        }
-                    }
+        if let Ok(aa_obj) = d.get(b"AA")
+            && let Some(aa) = get_dict_from_object(doc, aa_obj)
+        {
+            for key in [
+                b"K".as_slice(),
+                b"F".as_slice(),
+                b"V".as_slice(),
+                b"C".as_slice(),
+            ] {
+                if let Ok(action) = aa.get(key)
+                    && let Some(js) = javascript_text(doc, action)
+                    && (js.contains("AFDate_") || js.contains("util.printd"))
+                {
+                    return true;
                 }
             }
         }
@@ -1100,10 +1089,10 @@ fn field_has_date_javascript(doc: &Document, field_id: ObjectId, field: &Diction
         return true;
     }
     for widget_id in widget_ids(doc, field_id, field) {
-        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if check_dict(widget) {
-                return true;
-            }
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict())
+            && check_dict(widget)
+        {
+            return true;
         }
     }
     false
@@ -1204,10 +1193,10 @@ fn extract_resolved_field_value(
             if let Some(val) = field_value(widget, b"V") {
                 return Some(val);
             }
-            if let Ok(as_name) = widget.get(b"AS").and_then(|x| x.as_name()) {
-                if as_name != b"Off" {
-                    return Some(Value::String(String::from_utf8_lossy(as_name).into_owned()));
-                }
+            if let Ok(as_name) = widget.get(b"AS").and_then(|x| x.as_name())
+                && as_name != b"Off"
+            {
+                return Some(Value::String(String::from_utf8_lossy(as_name).into_owned()));
             }
         }
     }
@@ -1245,40 +1234,41 @@ fn extract_certificate_info(
     Option<String>,
 ) {
     for i in 0..contents.len().saturating_sub(4) {
-        if contents[i] == 0x30 && (contents[i + 1] == 0x82 || contents[i + 1] == 0x81) {
-            if let Ok((_, cert)) = x509_parser::parse_x509_certificate(&contents[i..]) {
-                let signer_name = cert
-                    .subject()
-                    .iter_common_name()
-                    .next()
-                    .and_then(|cn| cn.as_str().ok())
-                    .map(|s| s.to_string())
-                    .or_else(|| Some(cert.subject().to_string()));
-                let signer_org = cert
-                    .subject()
-                    .iter_organization()
-                    .next()
-                    .and_then(|o| o.as_str().ok())
-                    .map(|s| s.to_string());
-                let issuer = cert
-                    .issuer()
-                    .iter_common_name()
-                    .next()
-                    .and_then(|cn| cn.as_str().ok())
-                    .map(|s| s.to_string())
-                    .or_else(|| Some(cert.issuer().to_string()));
-                let not_before = Some(cert.validity().not_before.to_string());
-                let not_after = Some(cert.validity().not_after.to_string());
-                let serial = Some(cert.raw_serial_as_string());
-                return (
-                    signer_name,
-                    signer_org,
-                    issuer,
-                    not_before,
-                    not_after,
-                    serial,
-                );
-            }
+        if contents[i] == 0x30
+            && (contents[i + 1] == 0x82 || contents[i + 1] == 0x81)
+            && let Ok((_, cert)) = x509_parser::parse_x509_certificate(&contents[i..])
+        {
+            let signer_name = cert
+                .subject()
+                .iter_common_name()
+                .next()
+                .and_then(|cn| cn.as_str().ok())
+                .map(|s| s.to_string())
+                .or_else(|| Some(cert.subject().to_string()));
+            let signer_org = cert
+                .subject()
+                .iter_organization()
+                .next()
+                .and_then(|o| o.as_str().ok())
+                .map(|s| s.to_string());
+            let issuer = cert
+                .issuer()
+                .iter_common_name()
+                .next()
+                .and_then(|cn| cn.as_str().ok())
+                .map(|s| s.to_string())
+                .or_else(|| Some(cert.issuer().to_string()));
+            let not_before = Some(cert.validity().not_before.to_string());
+            let not_after = Some(cert.validity().not_after.to_string());
+            let serial = Some(cert.raw_serial_as_string());
+            return (
+                signer_name,
+                signer_org,
+                issuer,
+                not_before,
+                not_after,
+                serial,
+            );
         }
     }
     (None, None, None, None, None, None)
@@ -1303,18 +1293,17 @@ fn get_signature_dict<'a>(
     field_id: ObjectId,
     field: &'a Dictionary,
 ) -> Option<&'a Dictionary> {
-    if let Ok(v_obj) = field.get(b"V") {
-        if let Some(d) = get_dict_from_object(doc, v_obj) {
-            return Some(d);
-        }
+    if let Ok(v_obj) = field.get(b"V")
+        && let Some(d) = get_dict_from_object(doc, v_obj)
+    {
+        return Some(d);
     }
     for widget_id in widget_ids(doc, field_id, field) {
-        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict()) {
-            if let Ok(v_obj) = widget.get(b"V") {
-                if let Some(d) = get_dict_from_object(doc, v_obj) {
-                    return Some(d);
-                }
-            }
+        if let Ok(widget) = doc.get_object(widget_id).and_then(|x| x.as_dict())
+            && let Ok(v_obj) = widget.get(b"V")
+            && let Some(d) = get_dict_from_object(doc, v_obj)
+        {
+            return Some(d);
         }
     }
     None
@@ -1721,64 +1710,59 @@ fn resolve_or_create_widget_appearance(
         .get(b"AP")
         .ok()
         .or_else(|| def.field.get(b"AP").ok());
-    if let Some(ap) = ap_obj.and_then(|x| get_dict_from_object(doc, x)) {
-        if let Ok(n_obj) = ap.get(b"N") {
-            if let Ok(stream_id) = n_obj.as_reference() {
-                if let Ok(obj) = doc.get_object(stream_id) {
-                    if obj.as_stream().is_ok() {
-                        return Some(stream_id);
-                    }
-                    if let Ok(n_dict) = obj.as_dict() {
-                        let state = widget_dict
-                            .get(b"AS")
-                            .ok()
-                            .and_then(|x| x.as_name().ok())
-                            .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
-                        if let Some(state_name) = state {
-                            if state_name != b"Off" {
-                                if let Ok(state_stream_id) =
-                                    n_dict.get(state_name).and_then(|x| x.as_reference())
-                                {
-                                    return Some(state_stream_id);
-                                }
-                            }
-                        }
-                    }
+    if let Some(ap) = ap_obj.and_then(|x| get_dict_from_object(doc, x))
+        && let Ok(n_obj) = ap.get(b"N")
+    {
+        if let Ok(stream_id) = n_obj.as_reference() {
+            if let Ok(obj) = doc.get_object(stream_id) {
+                if obj.as_stream().is_ok() {
+                    return Some(stream_id);
                 }
-            } else if let Ok(n_dict) = n_obj.as_dict() {
-                let state = widget_dict
-                    .get(b"AS")
-                    .ok()
-                    .and_then(|x| x.as_name().ok())
-                    .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
-                if let Some(state_name) = state {
-                    if state_name != b"Off" {
-                        if let Ok(state_stream_id) =
+                if let Ok(n_dict) = obj.as_dict() {
+                    let state = widget_dict
+                        .get(b"AS")
+                        .ok()
+                        .and_then(|x| x.as_name().ok())
+                        .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
+                    if let Some(state_name) = state
+                        && state_name != b"Off"
+                        && let Ok(state_stream_id) =
                             n_dict.get(state_name).and_then(|x| x.as_reference())
-                        {
-                            return Some(state_stream_id);
-                        }
+                    {
+                        return Some(state_stream_id);
                     }
                 }
-            } else if let Ok(stream) = n_obj.as_stream() {
-                let id = doc.add_object(stream.clone());
-                return Some(id);
             }
+        } else if let Ok(n_dict) = n_obj.as_dict() {
+            let state = widget_dict
+                .get(b"AS")
+                .ok()
+                .and_then(|x| x.as_name().ok())
+                .or_else(|| def.field.get(b"V").ok().and_then(|x| x.as_name().ok()));
+            if let Some(state_name) = state
+                && state_name != b"Off"
+                && let Ok(state_stream_id) = n_dict.get(state_name).and_then(|x| x.as_reference())
+            {
+                return Some(state_stream_id);
+            }
+        } else if let Ok(stream) = n_obj.as_stream() {
+            let id = doc.add_object(stream.clone());
+            return Some(id);
         }
     }
 
     if def.field_type == b"Tx" || def.field_type == b"Ch" {
         let val_opt = extract_resolved_field_value(doc, def.id, &def.field);
-        if let Some(Value::String(val_str)) = val_opt {
-            if !val_str.is_empty() {
-                return Some(unicode_font::create_text_appearance_stream(
-                    doc,
-                    w,
-                    h,
-                    &val_str,
-                    unicode_ctx,
-                ));
-            }
+        if let Some(Value::String(val_str)) = val_opt
+            && !val_str.is_empty()
+        {
+            return Some(unicode_font::create_text_appearance_stream(
+                doc,
+                w,
+                h,
+                &val_str,
+                unicode_ctx,
+            ));
         }
     }
 
@@ -1859,12 +1843,12 @@ pub fn flatten_form_fields(
 
     let mut widget_page_obj_map = HashMap::new();
     for (_page_number, page_id) in doc.get_pages() {
-        if let Ok(page) = doc.get_object(page_id).and_then(|x| x.as_dict()) {
-            if let Ok(annots) = page.get(b"Annots").and_then(|x| x.as_array()) {
-                for annot in annots {
-                    if let Ok(id) = annot.as_reference() {
-                        widget_page_obj_map.insert(id, page_id);
-                    }
+        if let Ok(page) = doc.get_object(page_id).and_then(|x| x.as_dict())
+            && let Ok(annots) = page.get(b"Annots").and_then(|x| x.as_array())
+        {
+            for annot in annots {
+                if let Ok(id) = annot.as_reference() {
+                    widget_page_obj_map.insert(id, page_id);
                 }
             }
         }
@@ -1884,12 +1868,13 @@ pub fn flatten_form_fields(
     // Scan text/combo fields to flatten for non-ASCII characters
     let mut non_ascii_chars = Vec::new();
     for def in &fields_to_flatten {
-        if def.field_type == b"Tx" || def.field_type == b"Ch" {
-            if let Some(Value::String(val_str)) = extract_resolved_field_value(doc, def.id, &def.field) {
-                for c in val_str.chars() {
-                    if (c as u32) > 127 && !non_ascii_chars.contains(&c) {
-                        non_ascii_chars.push(c);
-                    }
+        if (def.field_type == b"Tx" || def.field_type == b"Ch")
+            && let Some(Value::String(val_str)) =
+                extract_resolved_field_value(doc, def.id, &def.field)
+        {
+            for c in val_str.chars() {
+                if (c as u32) > 127 && !non_ascii_chars.contains(&c) {
+                    non_ascii_chars.push(c);
                 }
             }
         }
@@ -1937,7 +1922,9 @@ pub fn flatten_form_fields(
                 continue;
             }
 
-            if let Some(app_id) = resolve_or_create_widget_appearance(doc, widget_id, def, w, h, unicode_ctx.as_ref()) {
+            if let Some(app_id) =
+                resolve_or_create_widget_appearance(doc, widget_id, def, w, h, unicode_ctx.as_ref())
+            {
                 let (sx, sy, tx, ty) = if let Ok(stream_obj) = doc.get_object(app_id) {
                     if let Ok(stream) = stream_obj.as_stream() {
                         if let Ok(bbox) = stream.dict.get(b"BBox").and_then(|x| x.as_array()) {
@@ -1988,29 +1975,29 @@ pub fn flatten_form_fields(
 
     // Remove widgets from page /Annots
     for (_page_num, page_id) in doc.get_pages() {
-        if let Ok(page) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
-            if let Ok(annots) = page.get_mut(b"Annots").and_then(|x| x.as_array_mut()) {
-                annots.retain(|item| match item.as_reference() {
-                    Ok(id) => !widgets_to_remove.contains(&id),
-                    _ => true,
-                });
-            }
+        if let Ok(page) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut())
+            && let Ok(annots) = page.get_mut(b"Annots").and_then(|x| x.as_array_mut())
+        {
+            annots.retain(|item| match item.as_reference() {
+                Ok(id) => !widgets_to_remove.contains(&id),
+                _ => true,
+            });
         }
     }
 
     for kept_id in &all_kept_ids {
-        if let Ok(dict) = doc.get_object_mut(*kept_id).and_then(|x| x.as_dict_mut()) {
-            if let Ok(kids) = dict.get_mut(b"Kids").and_then(|x| x.as_array_mut()) {
-                kids.retain(|k| match k.as_reference() {
-                    Ok(id) => all_kept_ids.contains(&id),
-                    _ => true,
-                });
-            }
+        if let Ok(dict) = doc.get_object_mut(*kept_id).and_then(|x| x.as_dict_mut())
+            && let Ok(kids) = dict.get_mut(b"Kids").and_then(|x| x.as_array_mut())
+        {
+            kids.retain(|k| match k.as_reference() {
+                Ok(id) => all_kept_ids.contains(&id),
+                _ => true,
+            });
         }
     }
 
     // Clean up AcroForm /Fields
-    for (_, object) in doc.objects.iter_mut() {
+    for object in doc.objects.values_mut() {
         if let Ok(dict) = object.as_dict_mut() {
             if let Ok(fields) = dict.get_mut(b"Fields").and_then(|x| x.as_array_mut()) {
                 fields.retain(|item| match item.as_reference() {
@@ -2154,15 +2141,15 @@ pub fn insert_piece_info(doc: &mut Document, piece_info: &Value) -> Result<(), S
         }
     };
 
-    if let Some(r_id) = existing_ref {
-        if let Ok(piece_dict) = doc.get_object_mut(r_id).and_then(|o| o.as_dict_mut()) {
-            if let Object::Dictionary(new_dict) = new_obj {
-                for (k, v) in new_dict.iter() {
-                    piece_dict.set(k.clone(), v.clone());
-                }
+    if let Some(r_id) = existing_ref
+        && let Ok(piece_dict) = doc.get_object_mut(r_id).and_then(|o| o.as_dict_mut())
+    {
+        if let Object::Dictionary(new_dict) = new_obj {
+            for (k, v) in new_dict.iter() {
+                piece_dict.set(k.clone(), v.clone());
             }
-            return Ok(());
         }
+        return Ok(());
     }
 
     let catalog = doc
@@ -2218,39 +2205,39 @@ pub fn fill_pdf(
     let mut piece_info_val = None;
     let mut locked_piece_info_val = None;
     let mut flatten_val = false;
-    if let Some(s) = piece_info {
-        if !s.trim().is_empty() {
-            let val: serde_json::Value =
-                serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?;
+    if let Some(s) = piece_info
+        && !s.trim().is_empty()
+    {
+        let val: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| format!("Invalid piece_info JSON: {e}"))?;
 
-            if let Some(f) = val
-                .get("flatten")
-                .and_then(|v| v.as_bool())
-                .or_else(|| val.get("__flatten").and_then(|v| v.as_bool()))
-                .or_else(|| {
-                    val.get("WasmPlayground")
-                        .and_then(|w| w.get("flatten"))
-                        .and_then(|v| v.as_bool())
-                })
-            {
-                flatten_val = f;
-            }
+        if let Some(f) = val
+            .get("flatten")
+            .and_then(|v| v.as_bool())
+            .or_else(|| val.get("__flatten").and_then(|v| v.as_bool()))
+            .or_else(|| {
+                val.get("WasmPlayground")
+                    .and_then(|w| w.get("flatten"))
+                    .and_then(|v| v.as_bool())
+            })
+        {
+            flatten_val = f;
+        }
 
-            if let Some(locked_obj) = val.get("__locked") {
-                if let (Some(app), Some(data), Some(sec)) = (
-                    locked_obj.get("app_name").and_then(|v| v.as_str()),
-                    locked_obj.get("data"),
-                    locked_obj.get("secret_key").and_then(|v| v.as_str()),
-                ) {
-                    locked_piece_info_val = Some(LockedPieceInfoConfig {
-                        app_name: app.to_string(),
-                        data: data.clone(),
-                        secret_key: sec.to_string(),
-                    });
-                }
-            } else {
-                piece_info_val = Some(val);
+        if let Some(locked_obj) = val.get("__locked") {
+            if let (Some(app), Some(data), Some(sec)) = (
+                locked_obj.get("app_name").and_then(|v| v.as_str()),
+                locked_obj.get("data"),
+                locked_obj.get("secret_key").and_then(|v| v.as_str()),
+            ) {
+                locked_piece_info_val = Some(LockedPieceInfoConfig {
+                    app_name: app.to_string(),
+                    data: data.clone(),
+                    secret_key: sec.to_string(),
+                });
             }
+        } else {
+            piece_info_val = Some(val);
         }
     }
     fill_pdf_with_options(
