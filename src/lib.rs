@@ -22,6 +22,7 @@ mod appearance_renderer;
 mod field_strategy;
 mod piece_info_security;
 mod sign;
+pub mod unicode_font;
 
 pub use appearance::{
     GraphicPosition, PdfAppearance, SignatureAppearanceOptions, SignatureDesign, SignatureFont,
@@ -1666,6 +1667,7 @@ fn resolve_or_create_widget_appearance(
     def: &FieldDefinition,
     w: f64,
     h: f64,
+    unicode_ctx: Option<&unicode_font::UnicodeFontContext>,
 ) -> Option<ObjectId> {
     let widget_dict = doc.get_object(widget_id).ok()?.as_dict().ok()?.clone();
 
@@ -1723,34 +1725,13 @@ fn resolve_or_create_widget_appearance(
         let val_opt = extract_resolved_field_value(doc, def.id, &def.field);
         if let Some(Value::String(val_str)) = val_opt {
             if !val_str.is_empty() {
-                let fs = (h * 0.7).clamp(8.0, 12.0);
-                let ty = (h - fs) / 2.0;
-                let escaped = appearance_renderer::escape_pdf_string(&val_str);
-                let content =
-                    format!("BT /Helv {fs:.2} Tf 0 0 0 rg 2 {ty:.2} Td ({escaped}) Tj ET\n");
-                let stream = Stream::new(
-                    dictionary! {
-                        "Type" => "XObject",
-                        "Subtype" => "Form",
-                        "FormType" => 1,
-                        "BBox" => vec![
-                            Object::Integer(0), Object::Integer(0),
-                            Object::Real(w as f32), Object::Real(h as f32),
-                        ],
-                        "Resources" => dictionary! {
-                            "Font" => dictionary! {
-                                "Helv" => dictionary! {
-                                    "Type" => "Font",
-                                    "Subtype" => "Type1",
-                                    "BaseFont" => "Helvetica",
-                                    "Encoding" => "WinAnsiEncoding",
-                                }
-                            }
-                        },
-                    },
-                    content.into_bytes(),
-                );
-                return Some(doc.add_object(stream));
+                return Some(unicode_font::create_text_appearance_stream(
+                    doc,
+                    w,
+                    h,
+                    &val_str,
+                    unicode_ctx,
+                ));
             }
         }
     }
@@ -1854,6 +1835,26 @@ pub fn flatten_form_fields(
         }
     }
 
+    // Scan text/combo fields to flatten for non-ASCII characters
+    let mut non_ascii_chars = Vec::new();
+    for def in &fields_to_flatten {
+        if def.field_type == b"Tx" || def.field_type == b"Ch" {
+            if let Some(Value::String(val_str)) = extract_resolved_field_value(doc, def.id, &def.field) {
+                for c in val_str.chars() {
+                    if (c as u32) > 127 && !non_ascii_chars.contains(&c) {
+                        non_ascii_chars.push(c);
+                    }
+                }
+            }
+        }
+    }
+
+    let unicode_ctx = if !non_ascii_chars.is_empty() {
+        Some(unicode_font::UnicodeFontContext::new(doc, &non_ascii_chars))
+    } else {
+        None
+    };
+
     for def in &fields_to_flatten {
         let widgets = widget_ids(doc, def.id, &def.field);
         for widget_id in widgets {
@@ -1890,7 +1891,7 @@ pub fn flatten_form_fields(
                 continue;
             }
 
-            if let Some(app_id) = resolve_or_create_widget_appearance(doc, widget_id, def, w, h) {
+            if let Some(app_id) = resolve_or_create_widget_appearance(doc, widget_id, def, w, h, unicode_ctx.as_ref()) {
                 let (sx, sy, tx, ty) = if let Ok(stream_obj) = doc.get_object(app_id) {
                     if let Ok(stream) = stream_obj.as_stream() {
                         if let Ok(bbox) = stream.dict.get(b"BBox").and_then(|x| x.as_array()) {

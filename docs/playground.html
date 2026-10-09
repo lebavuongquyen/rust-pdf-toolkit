@@ -275,11 +275,11 @@
     // Sample Data Sets
     const SAMPLE_DATA = {
       standard_form: {
-        "full_name": "Nguyễn Văn A",
-        "email": "nguyen.vana@enterprise.vn",
+        "full_name": "Nguyễn Văn An",
+        "email": "nguyen.vanan@enterprise.vn",
         "phone": "+84 987 654 321",
         "birth_date": "15/08/1995",
-        "job_title": "Senior Rust & Cloud Architect",
+        "job_title": "Kỹ sư trưởng phần mềm & Kiến trúc sư đám mây",
         "department": "Engineering",
         "skills": "Rust",
         "gender": "Male",
@@ -350,7 +350,7 @@
           if (onlySignatures) {
             const notice = document.createElement('div');
             notice.className = 'p-2.5 mb-2 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-xs text-emerald-300 flex items-center space-x-2';
-            notice.innerHTML = `<span>🔒</span><span>All form fields flattened permanently. Digital signature fields preserved for signing.</span>`;
+            notice.innerHTML = `<span>🔒</span><span>All form fields flattened permanently with UTF-8 Unicode support. Digital signature fields preserved for signing (Download PDF to sign in Adobe Acrobat / Foxit Reader).</span>`;
             fieldsListContainer.appendChild(notice);
           }
 

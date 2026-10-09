@@ -143,3 +143,27 @@ fn test_standard_form_signed_signature_is_readonly_and_never_flattened() {
     assert_eq!(sig_manager.signed, Some(false));
     assert!(!sig_manager.read_only, "Unsigned signature must remain signable!");
 }
+
+#[test]
+fn test_standard_form_vietnamese_flatten_rendering() {
+    let pdf_bytes = fs::read("reference/standard_form.pdf").expect("standard_form.pdf");
+    let fill_data = serde_json::json!({
+        "full_name": "Nguyễn Văn An",
+        "job_title": "Kỹ sư phần mềm cao cấp",
+        "department": "Engineering",
+        "skills": "Rust",
+        "birth_date": "15/08/1995"
+    })
+    .to_string();
+
+    let options = pdftoolkit_core::FillOptions::new().flatten(true);
+    let (filled_bytes, report) =
+        pdftoolkit_core::fill_pdf_with_options(&pdf_bytes, &fill_data, &options).expect("fill");
+
+    assert_eq!(report.filled_count(), 5);
+
+    // Verify fields after: only 2 signatures remain
+    let fields_after = get_form_fields(&filled_bytes).expect("fields after");
+    assert_eq!(fields_after.len(), 2);
+    assert!(fields_after.iter().all(|f| f.field_type == FormFieldType::Signature));
+}
