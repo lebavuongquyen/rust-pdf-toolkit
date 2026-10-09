@@ -57,7 +57,25 @@ wasm-pack build --target web --out-dir wasm_pkg
 
 ## 5-Minute Quick Start
 
-### 1. Fill a PDF Form in Rust
+### 1. Inspect & Discover Form Fields
+
+Before filling or signing, inspect all interactive fields in the template (see full [Form Fields Discovery API](form-fields-api.md)):
+
+```rust
+use pdftoolkit_core::get_form_fields;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let template = std::fs::read("template.pdf")?;
+    let fields = get_form_fields(&template)?;
+
+    for field in fields {
+        println!("{}: {:?} (value: {:?})", field.name, field.field_type, field.value);
+    }
+    Ok(())
+}
+```
+
+### 2. Fill a PDF Form in Rust
 
 ```rust
 use pdftoolkit_core::fill_pdf;
@@ -78,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 2. Digitally Sign a PDF in Rust
+### 3. Digitally Sign a PDF in Rust
 
 ```rust
 use pdftoolkit_core::{
@@ -116,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 3. Quick CLI Examples
+### 4. Quick CLI Examples
 
 ```bash
 # Fill a form

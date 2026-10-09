@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Digital Signing & Verification
-nav_order: 5
+nav_order: 6
 description: "CMS PKCS#7 digital signing, Foxit-compatible appearance engine, unified pipeline, and cryptographic internals"
 ---
 

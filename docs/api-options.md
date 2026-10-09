@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Rust API & Options
-nav_order: 7
+nav_order: 8
 description: "Comprehensive Rust options structs, default values, and data models"
 ---
 

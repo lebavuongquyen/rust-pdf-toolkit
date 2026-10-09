@@ -1,7 +1,7 @@
 ---
 layout: default
 title: WebAssembly (WASM) Guide
-nav_order: 8
+nav_order: 9
 description: "Browser & Node.js usage with WebAssembly bindings, JavaScript/TypeScript API reference"
 ---
 

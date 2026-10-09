@@ -72,7 +72,8 @@ PDF Template
 |---|---|
 | [**Getting Started**](getting-started.md) | Installation, Cargo setup, WASM compilation, and quick start code snippets. |
 | [**Architecture & Design**](architecture.md) | Architectural foundations, shared field model, design principles, and memory model. |
-| [**Form Filling & Metadata**](form-filling.md) | Form field discovery, value resolution, `/PieceInfo` metadata, and AES-256-GCM Stealth Cryptographic Lock. |
+| [**Form Fields Discovery API**](form-fields-api.md) | In-depth AcroForm inspection, field discovery specifications, full JSON schema, and individual field type breakdown (Text, Date, ComboBox, ListBox, Checkbox, Radio, Image, Signature, Button, Barcode). |
+| [**Form Filling & Metadata**](form-filling.md) | Intelligent field filling, selective flattening, `/PieceInfo` metadata, and AES-256-GCM Stealth Cryptographic Lock. |
 | [**Digital Signing & Verification**](digital-signing.md) | PKCS#7 CMS signing, Foxit visual templates, unified pipeline, and in-depth cryptographic internals. |
 | [**CLI Handbook**](cli-reference.md) | Complete CLI manual covering all 13 subcommands with comprehensive examples. |
 | [**Rust API & Options**](api-options.md) | Detailed Rust configuration structs, default values, and text/image inspection models. |

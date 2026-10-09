@@ -1,13 +1,15 @@
 ---
 layout: default
 title: Form Filling & Metadata
-nav_order: 4
+nav_order: 5
 description: "AcroForm discovery, intelligent field filling, flattening, and ISO 32000-1 PieceInfo cryptographic lock"
 ---
 
 # Form Filling & Metadata Management
 
 ## Form Field Discovery API (`get fields`)
+
+> For comprehensive specifications, field flag tables, and detailed JSON schemas for all 10 individual field types (Text, Date, ComboBox, ListBox, Checkbox, Radio, Image, Signature, Button, Barcode), see the dedicated [**Form Fields Discovery API Guide**](form-fields-api.md).
 
 `pdffiller` provides a zero-dependency, ultra-fast field inspection engine across Rust, WebAssembly, and the CLI. It parses complex ISO 32000-1 AcroForm trees, resolving inherited attributes, widget bounding boxes, field formats, choice configurations (multi-select, custom options), and digital signatures.
 
