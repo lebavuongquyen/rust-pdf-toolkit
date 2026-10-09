@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rust-pdf-toolkit Live Playground (WASM)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen font-sans overflow-hidden">
+
+  <!-- Top Header Navigation -->
+  <header class="bg-slate-900 border-b border-slate-800 px-5 py-3 flex items-center justify-between shrink-0 shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg">
+        🦀
+      </div>
+      <div>
+        <h1 class="font-bold text-base md:text-lg text-white tracking-wide">
+          rust-pdf-toolkit <span class="text-blue-400 font-semibold text-xs ml-1 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800">Live WASM</span>
+        </h1>
+        <p class="text-xs text-slate-400 hidden sm:block">Pure in-browser PDF manipulation & AcroForm filling powered by Rust WebAssembly</p>
+      </div>
+    </div>
+
+    <!-- Actions & Status -->
+    <div class="flex items-center space-x-3">
+      <div id="wasmStatusBadge" class="flex items-center space-x-2 text-xs bg-amber-950/60 text-amber-300 border border-amber-700/60 px-3 py-1 rounded-full font-medium transition-all">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="wasmStatusText">Loading WASM...</span>
+      </div>
+      <a href="index.html" class="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition border border-slate-700">
+        📖 Docs
+      </a>
+      <a href="https://github.com/lebavuongquyen/rust-pdf-toolkit" target="_blank" rel="noopener noreferrer" class="text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium px-3.5 py-1.5 rounded-md transition shadow flex items-center space-x-1.5">
+        <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Content Workspace (Split Screen) -->
+  <main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+
+    <!-- LEFT PANEL: Controls, Inspector, JSON Editor -->
+    <section class="w-full lg:w-[480px] xl:w-[520px] bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0">
+      
+      <!-- Template / File Selector Bar -->
+      <div class="p-4 border-b border-slate-800 bg-slate-900/90 space-y-3">
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Select PDF Template</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btnSample1" class="text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium hover:bg-blue-900/50 transition text-left flex items-center space-x-2">
+            <span>📄</span>
+            <span class="truncate">Contact Form</span>
+          </button>
+          <button id="btnSample2" class="text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2">
+            <span>📑</span>
+            <span class="truncate">8-Field Template</span>
+          </button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <label class="flex-1 flex items-center justify-center space-x-2 border border-dashed border-slate-700 hover:border-slate-500 bg-slate-950/40 hover:bg-slate-800/40 py-2 px-3 rounded-lg cursor-pointer transition text-xs text-slate-400 hover:text-slate-200">
+            <span>📤</span>
+            <span>Upload custom .pdf</span>
+            <input type="file" id="customPdfInput" accept=".pdf" class="hidden">
+          </label>
+          <span id="activeFileInfo" class="text-xs text-slate-400 font-mono truncate max-w-[140px]">template.pdf</span>
+        </div>
+      </div>
+
+      <!-- Feature Tabs -->
+      <div class="flex border-b border-slate-800 bg-slate-950/60 text-xs px-2 pt-1">
+        <button id="tabFill" class="px-4 py-2.5 font-medium border-b-2 border-blue-500 text-blue-400 transition">✍️ Fill Form</button>
+        <button id="tabWatermark" class="px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">💧 Watermark</button>
+        <button id="tabNumbering" class="px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">🔢 Numbering</button>
+        <button id="tabFields" class="px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">📋 Fields (<span id="fieldsCount">0</span>)</button>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="flex-1 p-4 overflow-y-auto space-y-4">
+
+        <!-- TAB 1: FORM FILLING -->
+        <div id="contentFill" class="space-y-4">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">AcroForm JSON Payload</label>
+            <button id="btnResetJson" class="text-xs text-blue-400 hover:underline">Reset Sample JSON</button>
+          </div>
+          <textarea id="jsonEditor" rows="11" class="w-full bg-slate-950 font-mono text-xs text-emerald-300 p-3 rounded-lg border border-slate-800 focus:outline-none focus:border-blue-500 transition leading-relaxed shadow-inner" spellcheck="false"></textarea>
+
+          <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <div class="flex items-center space-x-2">
+              <input type="checkbox" id="chkFlatten" class="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0">
+              <label for="chkFlatten" class="text-xs text-slate-300 cursor-pointer">Flatten fields into permanent graphics</label>
+            </div>
+            <span class="text-[11px] text-slate-500">Non-editable output</span>
+          </div>
+
+          <button id="btnExecuteFill" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium text-xs rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+            <span>⚡</span>
+            <span>Execute Form Filling (WASM)</span>
+          </button>
+        </div>
+
+        <!-- TAB 2: WATERMARK -->
+        <div id="contentWatermark" class="hidden space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Watermark Text</label>
+            <input type="text" id="watermarkText" value="CONFIDENTIAL - BẢN SAO LƯU" class="w-full bg-slate-950 text-xs text-slate-200 p-2.5 rounded-lg border border-slate-800 focus:border-blue-500">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Position</label>
+              <select id="watermarkPosition" class="w-full bg-slate-950 text-xs text-slate-200 p-2.5 rounded-lg border border-slate-800">
+                <option value="Diagonal">Diagonal</option>
+                <option value="Center">Center</option>
+                <option value="BottomRight">Bottom Right</option>
+                <option value="TopLeft">Top Left</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Opacity (<span id="opacityVal">0.18</span>)</label>
+              <input type="range" id="watermarkOpacity" min="0.05" max="1.0" step="0.05" value="0.18" class="w-full mt-2 accent-blue-500">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Color</label>
+            <div class="flex items-center space-x-2">
+              <input type="color" id="watermarkColor" value="#C00000" class="w-8 h-8 rounded bg-transparent border-0 cursor-pointer">
+              <span id="watermarkColorHex" class="text-xs font-mono text-slate-400">#C00000</span>
+            </div>
+          </div>
+          <button id="btnExecuteWatermark" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+            <span>💧</span>
+            <span>Apply Watermark (WASM)</span>
+          </button>
+        </div>
+
+        <!-- TAB 3: NUMBERING -->
+        <div id="contentNumbering" class="hidden space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Format Pattern</label>
+            <input type="text" id="numberingFormat" value="Trang {page} / {total}" class="w-full bg-slate-950 text-xs text-slate-200 p-2.5 rounded-lg border border-slate-800">
+            <p class="text-[11px] text-slate-500 mt-1">Supports: {page}, {total}, {bates:06d}, {date}</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Position</label>
+            <select id="numberingPosition" class="w-full bg-slate-950 text-xs text-slate-200 p-2.5 rounded-lg border border-slate-800">
+              <option value="BottomCenter">Bottom Center</option>
+              <option value="BottomRight">Bottom Right</option>
+              <option value="BottomLeft">Bottom Left</option>
+              <option value="TopCenter">Top Center</option>
+              <option value="TopRight">Top Right</option>
+            </select>
+          </div>
+          <button id="btnExecuteNumbering" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+            <span>🔢</span>
+            <span>Apply Bates / Page Numbering</span>
+          </button>
+        </div>
+
+        <!-- TAB 4: DETECTED FIELDS LIST -->
+        <div id="contentFields" class="hidden space-y-2">
+          <div id="fieldsListContainer" class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+            <p class="text-xs text-slate-500 italic">Scanning PDF fields...</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Execution Benchmark Footer -->
+      <div class="p-3 border-t border-slate-800 bg-slate-950/70 text-xs text-slate-400 flex items-center justify-between">
+        <span id="execStats">Ready. Select template or upload.</span>
+        <span class="text-slate-600">|</span>
+        <span class="text-blue-400 font-mono text-[11px]">Zero Network Latency</span>
+      </div>
+
+    </section>
+
+    <!-- RIGHT PANEL: Live PDF Preview & Report Inspector -->
+    <section class="flex-1 bg-slate-950 flex flex-col h-full overflow-hidden">
+      
+      <!-- Top Preview Controls Bar -->
+      <div class="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div class="flex items-center space-x-2">
+          <button id="btnViewPdf" class="text-xs px-3 py-1.5 rounded-md font-medium bg-slate-800 text-white border border-slate-700">
+            📄 Document Preview
+          </button>
+          <button id="btnViewReport" class="text-xs px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition">
+            📊 Execution Report & JSON
+          </button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <button id="btnDownloadPdf" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md transition border border-slate-700 flex items-center space-x-1.5">
+            <span>⬇️</span>
+            <span>Download PDF</span>
+          </button>
+          <button id="btnOpenNewTab" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md transition border border-slate-700 flex items-center space-x-1.5">
+            <span>↗️</span>
+            <span>Open in Tab</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- PDF Viewer Frame -->
+      <div id="pdfViewerWrapper" class="flex-1 bg-slate-900/60 p-2 sm:p-4 flex flex-col relative overflow-hidden">
+        <iframe id="pdfFrame" class="w-full h-full rounded-lg border border-slate-800 shadow-2xl bg-slate-800" src="about:blank"></iframe>
+        
+        <!-- Loading Overlay -->
+        <div id="previewLoader" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-10 transition-opacity">
+          <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p id="loaderText" class="text-xs text-slate-300 font-medium">Initializing WASM engine...</p>
+        </div>
+      </div>
+
+      <!-- JSON Report Viewer (Toggleable) -->
+      <div id="reportViewerWrapper" class="flex-1 bg-slate-950 p-4 hidden flex-col overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">FillReport & Metadata Output</h3>
+          <span id="reportStatusBadge" class="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-400 border border-emerald-800">Status: OK</span>
+        </div>
+        <pre id="reportJsonOutput" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-4 font-mono text-xs text-blue-300 overflow-auto whitespace-pre leading-relaxed"></pre>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- WASM Logic Module -->
+  <script type="module">
+    import init, {
+      get_form_fields_result,
+      fill_pdf_bytes,
+      fill_pdf_result,
+      validate_pdf_result,
+      apply_watermark_wasm,
+      apply_page_numbering_wasm,
+      get_piece_info_result
+    } from './assets/wasm/pdftoolkit_core.js';
+
+    // State
+    let currentPdfBytes = null;
+    let originalPdfBytes = null;
+    let currentBlobUrl = null;
+    let detectedFields = [];
+
+    // DOM Elements
+    const wasmBadge = document.getElementById('wasmStatusBadge');
+    const wasmText = document.getElementById('wasmStatusText');
+    const previewLoader = document.getElementById('previewLoader');
+    const loaderText = document.getElementById('loaderText');
+    const pdfFrame = document.getElementById('pdfFrame');
+    const jsonEditor = document.getElementById('jsonEditor');
+    const execStats = document.getElementById('execStats');
+    const activeFileInfo = document.getElementById('activeFileInfo');
+    const fieldsCount = document.getElementById('fieldsCount');
+    const fieldsListContainer = document.getElementById('fieldsListContainer');
+    const reportJsonOutput = document.getElementById('reportJsonOutput');
+    const pdfViewerWrapper = document.getElementById('pdfViewerWrapper');
+    const reportViewerWrapper = document.getElementById('reportViewerWrapper');
+
+    // Sample Data Sets
+    const SAMPLE_DATA = {
+      template: {
+        "full_name": "Nguyễn Văn An",
+        "email": "nguyenvanan@example.com",
+        "phone": "+84 901 234 567",
+        "date": "2026-10-09",
+        "country": "Vietnam",
+        "agree": true,
+        "notes": "Phê duyệt tài liệu điện tử theo quy chuẩn ISO 32000-1."
+      },
+      template_8field: {
+        "Text Field0": "Nguyễn Văn B - Giám Đốc Điều Hành",
+        "Date Field0": "10/09/26",
+        "Check Box0": "Yes",
+        "Radio Button0": "Choice1",
+        "Combo Box0": "Item 1",
+        "List Box0": "Option A"
+      }
+    };
+
+    // 1. Initialize WASM Engine
+    async function initWasm() {
+      try {
+        loaderText.textContent = 'Loading pdftoolkit WASM binary...';
+        await init();
+        wasmBadge.className = 'flex items-center space-x-2 text-xs bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 px-3 py-1 rounded-full font-medium';
+        wasmBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>WASM Engine Ready</span>';
+        
+        // Load default template
+        await loadSampleTemplate('template.pdf', SAMPLE_DATA.template);
+      } catch (err) {
+        console.error('WASM Init failed:', err);
+        wasmBadge.className = 'flex items-center space-x-2 text-xs bg-red-950/70 text-red-300 border border-red-700/60 px-3 py-1 rounded-full font-medium';
+        wasmBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span><span>WASM Init Failed</span>';
+        loaderText.textContent = 'Failed to initialize WebAssembly: ' + err.message;
+      }
+    }
+
+    // 2. Load PDF into viewer and inspect fields
+    async function setPdfDocument(bytes, filename, sampleJson = null) {
+      currentPdfBytes = bytes;
+      originalPdfBytes = bytes.slice();
+      activeFileInfo.textContent = filename;
+
+      // Scan fields
+      inspectFields(bytes, sampleJson);
+
+      // Render in frame
+      renderPdfInPreview(bytes);
+    }
+
+    function renderPdfInPreview(bytes) {
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      currentBlobUrl = URL.createObjectURL(blob);
+      pdfFrame.src = currentBlobUrl;
+      previewLoader.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    // 3. Inspect fields with WASM
+    function inspectFields(bytes, sampleJson = null) {
+      try {
+        const rawJson = get_form_fields_result(bytes);
+        detectedFields = JSON.parse(rawJson);
+        fieldsCount.textContent = detectedFields.length;
+
+        // Render fields list
+        fieldsListContainer.innerHTML = '';
+        if (detectedFields.length === 0) {
+          fieldsListContainer.innerHTML = '<p class="text-xs text-slate-500 italic p-3">No interactive AcroForm fields found in this document.</p>';
+        } else {
+          detectedFields.forEach(f => {
+            const item = document.createElement('div');
+            item.className = 'bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 flex items-center justify-between text-xs';
+            item.innerHTML = `
+              <div class="truncate mr-2">
+                <span class="font-medium text-slate-200">${escapeHtml(f.name)}</span>
+                <span class="text-[10px] text-slate-500 block">Page ${f.page || 1}</span>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-medium ${getTypeBadge(f.field_type)}">${f.field_type}</span>
+            `;
+            fieldsListContainer.appendChild(item);
+          });
+        }
+
+        // Set JSON Payload
+        if (sampleJson) {
+          jsonEditor.value = JSON.stringify(sampleJson, null, 2);
+        } else {
+          // Generate scaffold from detected fields
+          const scaffold = {};
+          detectedFields.forEach(f => {
+            if (f.field_type === 'Checkbox') scaffold[f.name] = true;
+            else if (f.field_type === 'Signature') return; // Exclude sig fields
+            else scaffold[f.name] = f.value || "Sample Value";
+          });
+          jsonEditor.value = JSON.stringify(scaffold, null, 2);
+        }
+      } catch (err) {
+        console.error('Field inspection error:', err);
+      }
+    }
+
+    function getTypeBadge(type) {
+      switch (type) {
+        case 'Text': return 'bg-blue-950 text-blue-300 border border-blue-800';
+        case 'Checkbox': return 'bg-emerald-950 text-emerald-300 border border-emerald-800';
+        case 'Signature': return 'bg-purple-950 text-purple-300 border border-purple-800';
+        case 'ComboBox': case 'ListBox': return 'bg-amber-950 text-amber-300 border border-amber-800';
+        case 'Date': return 'bg-cyan-950 text-cyan-300 border border-cyan-800';
+        default: return 'bg-slate-800 text-slate-400 border border-slate-700';
+      }
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[tag] || tag));
+    }
+
+    // 4. Sample Loaders
+    async function loadSampleTemplate(name, json) {
+      previewLoader.classList.remove('opacity-0', 'pointer-events-none');
+      loaderText.textContent = `Loading ${name}...`;
+      const res = await fetch(`./assets/sample/${name}`);
+      if (!res.ok) throw new Error(`Could not load ./assets/sample/${name}`);
+      const arrayBuffer = await res.arrayBuffer();
+      await setPdfDocument(new Uint8Array(arrayBuffer), name, json);
+    }
+
+    document.getElementById('btnSample1').onclick = async () => {
+      document.getElementById('btnSample1').className = 'text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium transition text-left flex items-center space-x-2';
+      document.getElementById('btnSample2').className = 'text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2';
+      await loadSampleTemplate('template.pdf', SAMPLE_DATA.template);
+    };
+
+    document.getElementById('btnSample2').onclick = async () => {
+      document.getElementById('btnSample2').className = 'text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium transition text-left flex items-center space-x-2';
+      document.getElementById('btnSample1').className = 'text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2';
+      await loadSampleTemplate('template_8field.pdf', SAMPLE_DATA.template_8field);
+    };
+
+    // 5. Custom File Upload
+    document.getElementById('customPdfInput').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      previewLoader.classList.remove('opacity-0', 'pointer-events-none');
+      loaderText.textContent = `Reading ${file.name}...`;
+      const arrayBuffer = await file.arrayBuffer();
+      await setPdfDocument(new Uint8Array(arrayBuffer), file.name, null);
+    };
+
+    // 6. Action: Form Fill
+    document.getElementById('btnExecuteFill').onclick = async () => {
+      if (!currentPdfBytes) return;
+      try {
+        const t0 = performance.now();
+        const jsonStr = jsonEditor.value;
+        const flatten = document.getElementById('chkFlatten').checked;
+        
+        // Fill options
+        const pieceInfo = JSON.stringify({
+          WasmPlayground: {
+            filledAt: new Date().toISOString(),
+            flatten: flatten
+          }
+        });
+
+        const reportJson = fill_pdf_result(originalPdfBytes, jsonStr, pieceInfo);
+        const filledBytes = fill_pdf_bytes(originalPdfBytes, jsonStr, pieceInfo);
+        const t1 = performance.now();
+
+        currentPdfBytes = filledBytes;
+        renderPdfInPreview(filledBytes);
+
+        const duration = (t1 - t0).toFixed(2);
+        execStats.textContent = `⚡ Filled successfully in ${duration}ms (${filledBytes.length} bytes)`;
+
+        // Show report
+        reportJsonOutput.textContent = JSON.stringify(JSON.parse(reportJson), null, 2);
+      } catch (err) {
+        alert('Form Fill Error: ' + err.message);
+        console.error(err);
+      }
+    };
+
+    // 7. Action: Watermark
+    document.getElementById('btnExecuteWatermark').onclick = async () => {
+      if (!currentPdfBytes) return;
+      try {
+        const t0 = performance.now();
+        const text = document.getElementById('watermarkText').value;
+        const position = document.getElementById('watermarkPosition').value;
+        const opacity = parseFloat(document.getElementById('watermarkOpacity').value);
+        const colorHex = document.getElementById('watermarkColor').value;
+
+        const options = JSON.stringify({
+          text: text,
+          position: position,
+          opacity: opacity,
+          color: colorHex
+        });
+
+        const watermarkedBytes = apply_watermark_wasm(currentPdfBytes, options);
+        const t1 = performance.now();
+
+        currentPdfBytes = watermarkedBytes;
+        renderPdfInPreview(watermarkedBytes);
+
+        execStats.textContent = `💧 Watermark applied in ${(t1 - t0).toFixed(2)}ms`;
+      } catch (err) {
+        alert('Watermark Error: ' + err.message);
+      }
+    };
+
+    // Watermark Opacity & Color sliders
+    document.getElementById('watermarkOpacity').oninput = (e) => {
+      document.getElementById('opacityVal').textContent = e.target.value;
+    };
+    document.getElementById('watermarkColor').oninput = (e) => {
+      document.getElementById('watermarkColorHex').textContent = e.target.value;
+    };
+
+    // 8. Action: Bates Numbering
+    document.getElementById('btnExecuteNumbering').onclick = async () => {
+      if (!currentPdfBytes) return;
+      try {
+        const t0 = performance.now();
+        const format = document.getElementById('numberingFormat').value;
+        const position = document.getElementById('numberingPosition').value;
+
+        const options = JSON.stringify({
+          format: format,
+          position: position,
+          start_page: 1,
+          font_size: 10
+        });
+
+        const numberedBytes = apply_page_numbering_wasm(currentPdfBytes, options);
+        const t1 = performance.now();
+
+        currentPdfBytes = numberedBytes;
+        renderPdfInPreview(numberedBytes);
+
+        execStats.textContent = `🔢 Numbering applied in ${(t1 - t0).toFixed(2)}ms`;
+      } catch (err) {
+        alert('Page Numbering Error: ' + err.message);
+      }
+    };
+
+    // 9. Download & Open in Tab
+    document.getElementById('btnDownloadPdf').onclick = () => {
+      if (!currentPdfBytes) return;
+      const blob = new Blob([currentPdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pdftoolkit_output.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    document.getElementById('btnOpenNewTab').onclick = () => {
+      if (!currentBlobUrl) return;
+      window.open(currentBlobUrl, '_blank');
+    };
+
+    // 10. UI Navigation Tabs (Left Panel)
+    const tabs = [
+      { btn: 'tabFill', content: 'contentFill' },
+      { btn: 'tabWatermark', content: 'contentWatermark' },
+      { btn: 'tabNumbering', content: 'contentNumbering' },
+      { btn: 'tabFields', content: 'contentFields' },
+    ];
+
+    tabs.forEach(tab => {
+      document.getElementById(tab.btn).onclick = () => {
+        tabs.forEach(t => {
+          const b = document.getElementById(t.btn);
+          const c = document.getElementById(t.content);
+          if (t.btn === tab.btn) {
+            b.className = 'px-4 py-2.5 font-medium border-b-2 border-blue-500 text-blue-400 transition';
+            c.classList.remove('hidden');
+          } else {
+            b.className = 'px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition';
+            c.classList.add('hidden');
+          }
+        });
+      };
+    });
+
+    // 11. View Switcher (Right Panel: PDF vs Report)
+    document.getElementById('btnViewPdf').onclick = () => {
+      document.getElementById('btnViewPdf').className = 'text-xs px-3 py-1.5 rounded-md font-medium bg-slate-800 text-white border border-slate-700';
+      document.getElementById('btnViewReport').className = 'text-xs px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition';
+      pdfViewerWrapper.classList.remove('hidden');
+      reportViewerWrapper.classList.add('hidden');
+    };
+
+    document.getElementById('btnViewReport').onclick = () => {
+      document.getElementById('btnViewReport').className = 'text-xs px-3 py-1.5 rounded-md font-medium bg-slate-800 text-white border border-slate-700';
+      document.getElementById('btnViewPdf').className = 'text-xs px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition';
+      pdfViewerWrapper.classList.add('hidden');
+      reportViewerWrapper.classList.remove('hidden');
+      reportViewerWrapper.classList.add('flex');
+    };
+
+    // Kick off WASM
+    initWasm();
+  </script>
+</body>
+</html>

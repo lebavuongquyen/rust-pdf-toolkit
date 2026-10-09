@@ -25,3 +25,7 @@ aux_links:
 
 # Footer
 footer_content: "Copyright &copy; 2026 rust-pdf-toolkit. Built with Jekyll and GitHub Pages."
+
+# Assets inclusion for WASM and sample PDFs
+include:
+  - assets

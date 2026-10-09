@@ -8,7 +8,8 @@
 
 High-performance, pure-Rust and WASM-compatible PDF toolkit for form filling, digital signing, document merging, splitting, rasterizing to images, embedded image extraction, Bates numbering, watermarking, and multi-threaded batch folder processing.
 
-📖 **Full Documentation Portal**: [https://lebavuongquyen.github.io/rust-pdf-toolkit/](https://lebavuongquyen.github.io/rust-pdf-toolkit/)
+📖 **Full Documentation Portal**: [https://lebavuongquyen.github.io/rust-pdf-toolkit/](https://lebavuongquyen.github.io/rust-pdf-toolkit/)  
+🚀 **Live Web Playground (WASM)**: [https://lebavuongquyen.github.io/rust-pdf-toolkit/playground.html](https://lebavuongquyen.github.io/rust-pdf-toolkit/playground.html)
 
 ---
 

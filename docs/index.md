@@ -11,7 +11,8 @@ permalink: /
 {: .fs-6 .fw-300 }
 High-performance, pure-Rust and WASM-compatible PDF toolkit for form filling, digital signing, document merging, splitting, rasterizing, image extraction, Bates numbering, watermarking, and multi-threaded batch folder processing.
 
-[Get Started](getting-started.md){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
+[Live Playground](playground.html){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
+[Get Started](getting-started.md){: .btn .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [View on GitHub](https://github.com/lebavuongquyen/rust-pdf-toolkit){: .btn .fs-5 .mb-4 .mb-md-0 }
 
 ---
