@@ -1,0 +1,216 @@
+name: Release & Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v0.2.0)'
+        required: true
+        default: 'v0.2.0'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 1. Build CLI Binaries for Linux, Windows, macOS
+  build-binaries:
+    name: Build Binary (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: pdftoolkit
+            archive_name: pdftoolkit-linux-x86_64.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: pdftoolkit.exe
+            archive_name: pdftoolkit-windows-x86_64.zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: pdftoolkit
+            archive_name: pdftoolkit-darwin-arm64.tar.gz
+            experimental: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --bin pdftoolkit
+
+      - name: Package Binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          ARCHIVE="pdftoolkit-${TAG}-${{ matrix.archive_name }}"
+          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} .
+          tar -czvf "${ARCHIVE}" ${{ matrix.binary_name }} README.md LICENSE
+          mkdir -p dist
+          mv "${ARCHIVE}" dist/
+
+      - name: Package Binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $TAG = "${{ steps.vars.outputs.tag }}"
+          $ARCHIVE = "pdftoolkit-$TAG-${{ matrix.archive_name }}"
+          Compress-Archive -Path target\${{ matrix.target }}\release\pdftoolkit.exe, README.md, LICENSE -DestinationPath "dist\$ARCHIVE"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  # 2. Build WebAssembly Package & Publish to GitHub Packages (NPM)
+  build-wasm-and-packages:
+    name: Build WASM & Publish NPM Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag & Version
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Setup Rust toolchain with wasm32
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM Web Target
+        run: wasm-pack build --target web --out-dir wasm_pkg
+
+      - name: Configure package.json for GitHub Packages
+        shell: bash
+        env:
+          PKG_VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkgPath = 'wasm_pkg/package.json';
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            pkg.name = '@lebavuongquyen/rust-pdf-toolkit';
+            pkg.version = process.env.PKG_VERSION;
+            pkg.description = 'High-performance ISO 32000-1 AcroForm filler, digital signature engine, and PDF toolkit';
+            pkg.repository = { type: 'git', url: 'https://github.com/lebavuongquyen/rust-pdf-toolkit.git' };
+            pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+            console.log('Configured package.json:', pkg);
+          "
+
+      - name: Archive WASM Package for GitHub Release
+        shell: bash
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          mkdir -p dist
+          zip -r "dist/pdftoolkit-${TAG}-wasm.zip" wasm_pkg/
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Publish NPM Package to GitHub Packages
+        shell: bash
+        run: |
+          cd wasm_pkg
+          npm publish --access public || echo "Notice: Package version might already be published. Skipping."
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload WASM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-bundle
+          path: dist/*
+          if-no-files-found: error
+
+  # 3. Create GitHub Release and Upload All Assets
+  create-release:
+    name: Create GitHub Release
+    needs: [build-binaries, build-wasm-and-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          cd release-assets
+          sha256sum * > checksums.sha256
+          echo "=== Generated Checksums ==="
+          cat checksums.sha256
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: "Release ${{ steps.vars.outputs.tag }}"
+          files: |
+            release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

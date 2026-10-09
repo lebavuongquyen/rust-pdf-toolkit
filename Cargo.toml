@@ -2,6 +2,10 @@
 name = "rust-pdf-toolkit"
 version = "0.2.0"
 edition = "2024"
+description = "High-performance ISO 32000-1 AcroForm filler, digital signature engine, and PDF toolkit"
+repository = "https://github.com/lebavuongquyen/rust-pdf-toolkit"
+license = "MIT OR Apache-2.0"
+authors = ["lebavuongquyen <quyen.lbv@gmail.com>"]
 
 [lib]
 name = "pdftoolkit_core"
