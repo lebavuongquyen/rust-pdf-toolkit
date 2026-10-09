@@ -211,3 +211,177 @@ pub fn extract_images_from_pdf_wasm(
     }
     Ok(out_arr)
 }
+
+#[wasm_bindgen]
+pub fn apply_watermark_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::WatermarkOptions = if options_json.trim().is_empty() {
+        crate::ops::WatermarkOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid watermark options JSON: {e}")))?
+    };
+    crate::ops::apply_watermark(template, &opts).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn apply_page_numbering_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::NumberingOptions = if options_json.trim().is_empty() {
+        crate::ops::NumberingOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid numbering options JSON: {e}")))?
+    };
+    crate::ops::apply_page_numbering(template, &opts).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn add_signature_field_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::AddSignatureFieldOptions = if options_json.trim().is_empty() {
+        crate::ops::AddSignatureFieldOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(|e| {
+            JsValue::from_str(&format!("Invalid add signature field options JSON: {e}"))
+        })?
+    };
+    crate::ops::add_signature_field(template, &opts).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn remove_signature_field_wasm(
+    template: &[u8],
+    options_json: &str,
+) -> Result<js_sys::Object, JsValue> {
+    let opts: crate::ops::RemoveSignatureFieldOptions = if options_json.trim().is_empty() {
+        crate::ops::RemoveSignatureFieldOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(|e| {
+            JsValue::from_str(&format!("Invalid remove signature field options JSON: {e}"))
+        })?
+    };
+    let (bytes, count) =
+        crate::ops::remove_signature_field(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    let obj = js_sys::Object::new();
+    let uint8 = js_sys::Uint8Array::from(bytes.as_slice());
+    js_sys::Reflect::set(&obj, &"bytes".into(), &uint8)?;
+    js_sys::Reflect::set(
+        &obj,
+        &"removedCount".into(),
+        &JsValue::from_f64(count as f64),
+    )?;
+    Ok(obj)
+}
+
+#[wasm_bindgen]
+pub fn rotate_pdf_pages_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::RotateOptions = if options_json.trim().is_empty() {
+        crate::ops::RotateOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid rotate options JSON: {e}")))?
+    };
+    let (bytes, _report) =
+        crate::ops::rotate_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    Ok(bytes)
+}
+
+#[wasm_bindgen]
+pub fn rotate_pdf_pages_report_wasm(
+    template: &[u8],
+    options_json: &str,
+) -> Result<String, JsValue> {
+    let opts: crate::ops::RotateOptions = if options_json.trim().is_empty() {
+        crate::ops::RotateOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid rotate options JSON: {e}")))?
+    };
+    let (_bytes, report) =
+        crate::ops::rotate_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&report)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn remove_pdf_pages_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::RemovePagesOptions = if options_json.trim().is_empty() {
+        crate::ops::RemovePagesOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid remove pages options JSON: {e}")))?
+    };
+    let (bytes, _report) =
+        crate::ops::remove_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    Ok(bytes)
+}
+
+#[wasm_bindgen]
+pub fn remove_pdf_pages_report_wasm(
+    template: &[u8],
+    options_json: &str,
+) -> Result<String, JsValue> {
+    let opts: crate::ops::RemovePagesOptions = if options_json.trim().is_empty() {
+        crate::ops::RemovePagesOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid remove pages options JSON: {e}")))?
+    };
+    let (_bytes, report) =
+        crate::ops::remove_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&report)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn crop_pdf_pages_wasm(template: &[u8], options_json: &str) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::ops::CropOptions = if options_json.trim().is_empty() {
+        crate::ops::CropOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid crop options JSON: {e}")))?
+    };
+    let (bytes, _report) =
+        crate::ops::crop_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    Ok(bytes)
+}
+
+#[wasm_bindgen]
+pub fn crop_pdf_pages_report_wasm(template: &[u8], options_json: &str) -> Result<String, JsValue> {
+    let opts: crate::ops::CropOptions = if options_json.trim().is_empty() {
+        crate::ops::CropOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid crop options JSON: {e}")))?
+    };
+    let (_bytes, report) =
+        crate::ops::crop_pdf_pages(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&report)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn extract_text_wasm(template: &[u8], options_json: &str) -> Result<String, JsValue> {
+    let opts: crate::ops::TextExtractionOptions = if options_json.trim().is_empty() {
+        crate::ops::TextExtractionOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid text extraction options JSON: {e}")))?
+    };
+    crate::ops::extract_text(template, &opts).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn extract_text_structured_wasm(
+    template: &[u8],
+    options_json: &str,
+) -> Result<String, JsValue> {
+    let opts: crate::ops::TextExtractionOptions = if options_json.trim().is_empty() {
+        crate::ops::TextExtractionOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid text extraction options JSON: {e}")))?
+    };
+    let report =
+        crate::ops::extract_text_structured(template, &opts).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&report)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}

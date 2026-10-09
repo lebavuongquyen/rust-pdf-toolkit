@@ -1,8 +1,11 @@
 use crate::FillOptions;
 use crate::fill_pdf_with_options;
 use crate::ops::{
-    MergeOptions, OutputImageFormat, RenderOptions, SplitOptions, format_split_filename,
-    merge_pdf_bytes_with_options, render_pdf_to_images_with_options, split_pdf_bytes_with_options,
+    CropOptions, MergeOptions, NumberingOptions, OutputImageFormat, RemovePagesOptions,
+    RenderOptions, RotateOptions, SplitOptions, TextExtractionOptions, WatermarkOptions,
+    apply_page_numbering, apply_watermark, crop_pdf_pages, extract_text, extract_text_structured,
+    format_split_filename, merge_pdf_bytes_with_options, remove_pdf_pages,
+    render_pdf_to_images_with_options, rotate_pdf_pages, split_pdf_bytes_with_options,
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -641,4 +644,497 @@ pub fn batch_fill_records<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
         &b_opts,
     )?;
     Ok(rep.successful)
+}
+
+/// Batch applies a watermark across all PDF files in a directory.
+pub fn batch_watermark_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    wm_opts: &WatermarkOptions,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    if pdf_paths.is_empty() {
+        return Err(format!(
+            "No matching PDF files found in directory: {}",
+            input_dir.as_ref().display()
+        ));
+    }
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let file_name = pdf_path
+                .file_name()
+                .ok_or_else(|| format!("Invalid file path: {}", pdf_path.display()))?;
+            let out_file = out_dir.join(file_name);
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            let watermarked_bytes = apply_watermark(&bytes, wm_opts)
+                .map_err(|e| format!("Failed to watermark '{}': {e}", pdf_path.display()))?;
+
+            fs::write(&out_file, &watermarked_bytes)
+                .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
+}
+
+/// Batch applies page numbering across all PDF files in a directory.
+pub fn batch_number_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    num_opts: &NumberingOptions,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    if pdf_paths.is_empty() {
+        return Err(format!(
+            "No matching PDF files found in directory: {}",
+            input_dir.as_ref().display()
+        ));
+    }
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let file_name = pdf_path
+                .file_name()
+                .ok_or_else(|| format!("Invalid file path: {}", pdf_path.display()))?;
+            let out_file = out_dir.join(file_name);
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            let numbered_bytes = apply_page_numbering(&bytes, num_opts)
+                .map_err(|e| format!("Failed to number '{}': {e}", pdf_path.display()))?;
+
+            fs::write(&out_file, &numbered_bytes)
+                .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
+}
+
+/// Batch rotates all PDF files in a folder according to RotateOptions.
+pub fn batch_rotate_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    rot_opts: &RotateOptions,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let file_name = pdf_path
+                .file_name()
+                .ok_or_else(|| format!("Invalid file path: {}", pdf_path.display()))?;
+            let out_file = out_dir.join(file_name);
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            let (rotated_bytes, _report) = rotate_pdf_pages(&bytes, rot_opts)
+                .map_err(|e| format!("Failed to rotate '{}': {e}", pdf_path.display()))?;
+
+            fs::write(&out_file, &rotated_bytes)
+                .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
+}
+
+/// Batch removes pages from all PDFs in a folder according to RemovePagesOptions.
+pub fn batch_remove_pages_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    remove_opts: &RemovePagesOptions,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let file_name = pdf_path
+                .file_name()
+                .ok_or_else(|| format!("Invalid file path: {}", pdf_path.display()))?;
+            let out_file = out_dir.join(file_name);
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            let (cleaned_bytes, _report) = remove_pdf_pages(&bytes, remove_opts).map_err(|e| {
+                format!("Failed to remove pages from '{}': {e}", pdf_path.display())
+            })?;
+
+            fs::write(&out_file, &cleaned_bytes)
+                .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
+}
+
+/// Batch crops pages in all PDFs in a folder according to CropOptions.
+pub fn batch_crop_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    crop_opts: &CropOptions,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let file_name = pdf_path
+                .file_name()
+                .ok_or_else(|| format!("Invalid file path: {}", pdf_path.display()))?;
+            let out_file = out_dir.join(file_name);
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            let (cropped_bytes, _report) = crop_pdf_pages(&bytes, crop_opts)
+                .map_err(|e| format!("Failed to crop '{}': {e}", pdf_path.display()))?;
+
+            fs::write(&out_file, &cropped_bytes)
+                .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
+}
+
+/// Batch extracts text from all PDFs in a folder according to TextExtractionOptions.
+pub fn batch_extract_text_dir_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+    input_dir: P,
+    output_dir: Q,
+    text_opts: &TextExtractionOptions,
+    save_json: bool,
+    batch_opts: &BatchOptions,
+) -> Result<BatchReport, String> {
+    let pdf_paths = scan_pdf_files(
+        &input_dir,
+        batch_opts.recursive,
+        batch_opts.filter_pattern.as_deref(),
+    )?;
+
+    let out_dir = output_dir.as_ref();
+    if !batch_opts.dry_run {
+        fs::create_dir_all(out_dir).map_err(|e| {
+            format!(
+                "Failed to create output directory '{}': {e}",
+                out_dir.display()
+            )
+        })?;
+    }
+
+    let total = pdf_paths.len();
+    let results: Vec<Result<(), String>> = pdf_paths
+        .par_iter()
+        .map(|pdf_path| {
+            if batch_opts.dry_run {
+                return Ok(());
+            }
+
+            let stem = pdf_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("document");
+
+            let out_ext = if save_json { "json" } else { "txt" };
+            let out_file = out_dir.join(format!("{stem}.{out_ext}"));
+
+            if out_file.exists() && !batch_opts.overwrite {
+                return Ok(());
+            }
+
+            let bytes = fs::read(pdf_path)
+                .map_err(|e| format!("Failed to read '{}': {e}", pdf_path.display()))?;
+
+            if save_json {
+                let report = extract_text_structured(&bytes, text_opts).map_err(|e| {
+                    format!(
+                        "Failed to extract structured text from '{}': {e}",
+                        pdf_path.display()
+                    )
+                })?;
+                let json_str = serde_json::to_string_pretty(&report).map_err(|e| {
+                    format!(
+                        "Failed to serialize report for '{}': {e}",
+                        pdf_path.display()
+                    )
+                })?;
+                fs::write(&out_file, json_str)
+                    .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            } else {
+                let text = extract_text(&bytes, text_opts).map_err(|e| {
+                    format!("Failed to extract text from '{}': {e}", pdf_path.display())
+                })?;
+                fs::write(&out_file, text)
+                    .map_err(|e| format!("Failed to write output '{}': {e}", out_file.display()))?;
+            }
+
+            Ok(())
+        })
+        .collect();
+
+    let mut report = BatchReport {
+        total_scanned: total,
+        successful: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    for res in results {
+        match res {
+            Ok(_) => report.successful += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e);
+            }
+        }
+    }
+
+    if report.failed > 0 && !batch_opts.continue_on_error {
+        return Err(report.errors.join("; "));
+    }
+
+    Ok(report)
 }

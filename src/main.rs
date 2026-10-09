@@ -1,16 +1,26 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use pdftoolkit_core::{
-    FillOptions,
+    CertificateSigner, EcdsaSigner, FillOptions, PdfSigner, Signer,
     batch::{
-        BatchOptions, batch_extract_images_dir_with_options, batch_fill_records_with_options,
-        batch_merge_dir_with_options, batch_split_dir_with_options,
-        batch_to_image_dir_with_options,
+        BatchOptions, batch_crop_dir_with_options, batch_extract_images_dir_with_options,
+        batch_extract_text_dir_with_options, batch_fill_records_with_options,
+        batch_merge_dir_with_options, batch_number_dir_with_options,
+        batch_remove_pages_dir_with_options, batch_rotate_dir_with_options,
+        batch_split_dir_with_options, batch_to_image_dir_with_options,
+        batch_watermark_dir_with_options,
     },
     fill_pdf_with_options, form_fields_json,
     ops::{
-        ExtractImageOptions, MergeOptions, OutputImageFormat, PageMode, RenderOptions,
-        SplitOptions, extract_images_from_bytes, get_image_metadata, merge_pdf_bytes_with_options,
-        parse_split_ranges, render_pdf_to_images_with_options, split_pdf_bytes_with_options,
+        AddSignatureFieldOptions, ColorRgb, CropOptions, ExtractImageOptions, FieldPresetPosition,
+        LayerMode, MergeOptions, NumberingOptions, NumberingPosition, OutputImageFormat, PageMode,
+        PageSelection, RemovePagesOptions, RemoveSignatureFieldOptions, RenderOptions,
+        RotateOptions, RotationDirection, RotationMode, SignaturePlacement, SplitOptions,
+        TargetBox, TargetOrientation, TextExtractionOptions, TextGranularity, WatermarkOptions,
+        WatermarkPosition, add_signature_field, crop_pdf_pages, extract_images_from_bytes,
+        extract_text, extract_text_structured, get_image_metadata, merge_pdf_bytes_with_options,
+        parse_split_ranges, remove_pdf_pages, remove_signature_field,
+        render_pdf_to_images_with_options, rotate_pdf_pages, split_pdf_bytes_with_options,
+        verify_pdf_signatures,
     },
     report_json,
 };
@@ -22,7 +32,7 @@ use std::path::PathBuf;
     name = "pdftoolkit",
     author = "rust-pdf-toolkit contributors",
     version = "0.2.0",
-    about = "High-performance all-in-one PDF toolkit: Fill, Merge, Split, Convert to Image, and Batch Folder Processing",
+    about = "High-performance all-in-one PDF toolkit: Fill, Merge, Split, Convert to Image, Watermark, Page Numbering, and Batch Folder Processing",
     subcommand_required = false,
     arg_required_else_help = false
 )]
@@ -54,7 +64,41 @@ enum Commands {
     #[command(name = "extract-images")]
     ExtractImages(ExtractImagesArgs),
 
-    /// Batch process entire folders (Fill, Merge, Split, Convert, Extract)
+    /// Apply customizable text, image, or template watermark to PDF pages
+    Watermark(WatermarkArgs),
+
+    /// Apply Bates / Page numbering header and footer to PDF pages
+    Number(NumberArgs),
+
+    /// Rotate PDF pages by angle, normalize orientation (portrait/landscape), or auto-detect text direction
+    Rotate(RotateArgs),
+
+    /// Add a new empty signature field (invisible or custom position) to a PDF
+    #[command(name = "add-sig-field")]
+    AddSigField(AddSigFieldArgs),
+
+    /// Remove signature fields from a PDF
+    #[command(name = "remove-sig-field")]
+    RemoveSigField(RemoveSigFieldArgs),
+
+    /// Digitally sign a PDF using RSA or ECDSA certificate
+    Sign(SignArgs),
+
+    /// Verify digital signatures and cryptographic integrity of a PDF
+    Verify(VerifyArgs),
+
+    /// Remove pages (cover, back cover, blank pages, or specific ranges)
+    #[command(name = "remove-pages")]
+    RemovePages(RemovePagesArgs),
+
+    /// Crop PDF pages by margins, explicit box, or auto-detected content bounding box
+    Crop(CropArgs),
+
+    /// Extract text with precise bounding boxes, typography styles, and hierarchy
+    #[command(name = "extract-text")]
+    ExtractText(ExtractTextArgs),
+
+    /// Batch process entire folders (Fill, Merge, Split, Convert, Extract, Watermark, Number, RemovePages, Crop, ExtractText)
     Batch(BatchArgs),
 
     /// Inspect form fields and metadata of a PDF
@@ -274,6 +318,476 @@ struct ExtractImagesArgs {
 }
 
 #[derive(Args, Debug)]
+struct WatermarkArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Watermark text string. Supports placeholders: {page}, {total}, {date}, {time}, {filename}
+    #[arg(short, long)]
+    text: Option<String>,
+
+    /// Image watermark file path (PNG or JPEG)
+    #[arg(long)]
+    image: Option<PathBuf>,
+
+    /// Target pages: "all", "odd", "even", "first", "last", "1,3-5"
+    #[arg(short, long, default_value = "all")]
+    pages: String,
+
+    /// Watermark position: "diagonal", "center", "top-left", "bottom-right", "tiled", "x,y"
+    #[arg(long, default_value = "diagonal")]
+    position: String,
+
+    /// Custom rotation angle in degrees (default: auto diagonal angle for diagonal, 0 for center)
+    #[arg(long)]
+    rotation: Option<f64>,
+
+    /// Opacity in range [0.0, 1.0]. Default: 0.15 (15%)
+    #[arg(long, default_value_t = 0.15)]
+    opacity: f64,
+
+    /// Standard PDF BaseFont: "Helvetica-Bold", "Helvetica", "Times-Bold", "Courier-Bold", etc.
+    #[arg(long, default_value = "Helvetica-Bold")]
+    font: String,
+
+    /// Font size in points (default: auto dynamically scaled to fit page diagonal)
+    #[arg(long)]
+    font_size: Option<f64>,
+
+    /// Text color: hex "#RRGGBB" or name ("gray", "red", "black", "blue")
+    #[arg(long, default_value = "gray")]
+    color: String,
+
+    /// Layer: "over" (on top of page contents) or "under" (behind page contents)
+    #[arg(long, default_value = "over")]
+    layer: String,
+
+    /// Load watermark options from a JSON template file
+    #[arg(long)]
+    template_json: Option<PathBuf>,
+
+    /// Flatten form fields
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+
+    /// Optional piece_info JSON file path
+    #[arg(long)]
+    piece_info: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct NumberArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Format template: "Trang {page} / {total}", "Page {page} of {total}", "Bates #{bates:06d}"
+    #[arg(short, long, default_value = "Trang {page} / {total}")]
+    format: String,
+
+    /// Position: "bottom-center", "bottom-right", "bottom-left", "top-center", "top-right", "top-left"
+    #[arg(long, default_value = "bottom-center")]
+    position: String,
+
+    /// Target pages: "all", "odd", "even", "2-end"
+    #[arg(short, long, default_value = "all")]
+    pages: String,
+
+    /// Physical page to start numbering from (e.g. 2 to skip cover). Default: 1
+    #[arg(long, default_value_t = 1)]
+    start_page: u32,
+
+    /// Starting sequence number. Default: 1
+    #[arg(long, default_value_t = 1)]
+    start_number: u32,
+
+    /// Margin X from page edge in points. Default: 36.0 (0.5 inch)
+    #[arg(long, default_value_t = 36.0)]
+    margin_x: f64,
+
+    /// Margin Y from page edge in points. Default: 24.0
+    #[arg(long, default_value_t = 24.0)]
+    margin_y: f64,
+
+    /// Standard PDF BaseFont: "Helvetica", "Times-Roman", "Courier", etc.
+    #[arg(long, default_value = "Helvetica")]
+    font: String,
+
+    /// Font size in points. Default: 10.0
+    #[arg(long, default_value_t = 10.0)]
+    font_size: f64,
+
+    /// Text color: hex "#RRGGBB" or name ("black", "gray")
+    #[arg(long, default_value = "#404040")]
+    color: String,
+
+    /// Opacity in range [0.0, 1.0]. Default: 1.0
+    #[arg(long, default_value_t = 1.0)]
+    opacity: f64,
+
+    /// Layer: "over" or "under"
+    #[arg(long, default_value = "over")]
+    layer: String,
+
+    /// Flatten form fields
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+
+    /// Optional piece_info JSON file path
+    #[arg(long)]
+    piece_info: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct AddSigFieldArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Signature field name (default: "Signature1")
+    #[arg(short, long, default_value = "Signature1")]
+    name: String,
+
+    /// 1-based target page (0 or omitted = last page)
+    #[arg(short, long)]
+    page: Option<u32>,
+
+    /// Create invisible cryptographic signature field (Rect [0, 0, 0, 0])
+    #[arg(long, default_value_t = false)]
+    invisible: bool,
+
+    /// Explicit rectangle coordinates in points: "llx,lly,urx,ury"
+    #[arg(long)]
+    rect: Option<String>,
+
+    /// Visual preset position: "bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "center"
+    #[arg(long)]
+    position: Option<String>,
+
+    /// Preset field width in points (default: 150.0)
+    #[arg(long, default_value_t = 150.0)]
+    width: f64,
+
+    /// Preset field height in points (default: 50.0)
+    #[arg(long, default_value_t = 50.0)]
+    height: f64,
+
+    /// Preset margin X in points (default: 36.0)
+    #[arg(long, default_value_t = 36.0)]
+    margin_x: f64,
+
+    /// Preset margin Y in points (default: 36.0)
+    #[arg(long, default_value_t = 36.0)]
+    margin_y: f64,
+}
+
+#[derive(Args, Debug)]
+struct RemoveSigFieldArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Target signature field name to remove
+    #[arg(short, long)]
+    name: Option<String>,
+
+    /// Remove all unsigned signature fields
+    #[arg(long, default_value_t = false)]
+    all_unsigned: bool,
+
+    /// Remove all signature fields
+    #[arg(long, default_value_t = false)]
+    all: bool,
+}
+
+#[derive(Args, Debug)]
+struct SignArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Signature field name to sign
+    #[arg(short, long, default_value = "Signature1")]
+    field: String,
+
+    /// Certificate file path (PKCS#12 .p12/.pfx, or DER/PEM certificate)
+    #[arg(short, long)]
+    cert: PathBuf,
+
+    /// Private key file path (if separate PKCS#8 DER/PEM file)
+    #[arg(short, long)]
+    key: Option<PathBuf>,
+
+    /// Password for PKCS#12 (.p12/.pfx) certificate
+    #[arg(long)]
+    password: Option<String>,
+
+    /// Signing reason (e.g. "I approve this document")
+    #[arg(long)]
+    reason: Option<String>,
+
+    /// Signing location (e.g. "Hanoi, Vietnam")
+    #[arg(long)]
+    location: Option<String>,
+
+    /// Signer contact information
+    #[arg(long)]
+    contact: Option<String>,
+
+    /// Automatically create the signature field if it does not already exist
+    #[arg(long, default_value_t = false)]
+    auto_create_field: bool,
+
+    /// 1-based target page for auto-created field (0 or omitted = last page)
+    #[arg(short, long)]
+    page: Option<u32>,
+
+    /// Create invisible cryptographic signature (Rect [0, 0, 0, 0])
+    #[arg(long, default_value_t = false)]
+    invisible: bool,
+
+    /// Explicit rectangle coordinates in points: "llx,lly,urx,ury"
+    #[arg(long)]
+    rect: Option<String>,
+
+    /// Visual preset position: "bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "center"
+    #[arg(long)]
+    position: Option<String>,
+
+    /// Flatten form fields before signing
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+}
+
+#[derive(Args, Debug)]
+struct VerifyArgs {
+    /// Input PDF file path to verify
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output results in JSON format
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct RotateArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Rotation angle in degrees: 90, 180, 270, -90 (default: 90 if no orientation/auto mode)
+    #[arg(short, long)]
+    angle: Option<i32>,
+
+    /// Target orientation to normalize pages: "portrait" or "landscape"
+    #[arg(long)]
+    orientation: Option<String>,
+
+    /// Direction when normalizing orientation: "cw" (clockwise) or "ccw" (counter-clockwise)
+    #[arg(long, default_value = "cw")]
+    direction: String,
+
+    /// Smart text orientation detection: inspect content stream matrices to make text upright
+    #[arg(long, default_value_t = false)]
+    auto_text: bool,
+
+    /// Target pages: "all", "odd", "even", "first", "last", "1-3, 5"
+    #[arg(short, long, default_value = "all")]
+    pages: String,
+
+    /// Treat angle as absolute (set exactly) rather than relative (add to current rotation)
+    #[arg(long, default_value_t = false)]
+    absolute: bool,
+
+    /// Fallback angle if auto-text mode detects no text on the page
+    #[arg(long)]
+    fallback_angle: Option<i32>,
+
+    /// Flatten form fields
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+
+    /// Optional piece_info JSON file path
+    #[arg(long)]
+    piece_info: Option<PathBuf>,
+
+    /// Output report in JSON format
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct RemovePagesArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Remove first page (cover)
+    #[arg(long, default_value_t = false)]
+    cover: bool,
+
+    /// Remove last page (back cover)
+    #[arg(long, default_value_t = false)]
+    back_cover: bool,
+
+    /// Remove detected blank/empty pages
+    #[arg(long, default_value_t = false)]
+    blank: bool,
+
+    /// Explicit pages or range to remove: "2", "3-5", "odd", "even"
+    #[arg(short, long)]
+    pages: Option<String>,
+
+    /// Explicit pages or range to keep / protect from removal
+    #[arg(long)]
+    keep_pages: Option<String>,
+
+    /// Minimum pages that must remain in document (safety default: 1)
+    #[arg(long, default_value_t = 1)]
+    min_pages: usize,
+
+    /// Flatten form fields
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+
+    /// Optional piece_info JSON file path
+    #[arg(long)]
+    piece_info: Option<PathBuf>,
+
+    /// Output report in JSON format
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct CropArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output PDF file path
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Margins in points: "top,bottom,left,right" or uniform "36"
+    #[arg(long)]
+    margins: Option<String>,
+
+    /// Relative margin fractions (0.0 to 1.0): "top,bottom,left,right"
+    #[arg(long)]
+    margins_relative: Option<String>,
+
+    /// Explicit bounding box in points: "llx,lly,urx,ury"
+    #[arg(long)]
+    r#box: Option<String>,
+
+    /// Automatically crop around content bounding box (text, paths, images)
+    #[arg(long, default_value_t = false)]
+    auto_content: bool,
+
+    /// Padding in points when using --auto-content (default: 18.0)
+    #[arg(long, default_value_t = 18.0)]
+    padding: f64,
+
+    /// Target PDF box to modify: "crop", "media", "trim", "bleed", "all"
+    #[arg(long, default_value = "crop")]
+    target_box: String,
+
+    /// Target pages: "all", "odd", "even", "first", "last", "1-3, 5"
+    #[arg(short, long, default_value = "all")]
+    pages: String,
+
+    /// Disable clamping resulting box to MediaBox bounds
+    #[arg(long, default_value_t = false)]
+    no_clamp: bool,
+
+    /// Flatten form fields
+    #[arg(long, default_value_t = false)]
+    flatten: bool,
+
+    /// Optional piece_info JSON file path
+    #[arg(long)]
+    piece_info: Option<PathBuf>,
+
+    /// Output report in JSON format
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct ExtractTextArgs {
+    /// Input PDF file path
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output text or JSON file path (if omitted, prints to stdout)
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Target pages to extract: "all", "1-3", "odd", "even", "2"
+    #[arg(short, long, default_value = "all")]
+    pages: String,
+
+    /// Output granularity: "full", "blocks", "lines", "spans", "words"
+    #[arg(long, default_value = "full")]
+    granularity: String,
+
+    /// Output structured JSON with bounding boxes and typography styles
+    #[arg(long, default_value_t = false)]
+    json: bool,
+
+    /// Disable natural reading order sorting (top-to-bottom, left-to-right)
+    #[arg(long, default_value_t = false)]
+    no_reading_order: bool,
+
+    /// Vertical tolerance in points to group text spans into the same line (default: 3.5)
+    #[arg(long, default_value_t = 3.5)]
+    line_tolerance: f64,
+
+    /// Word gap factor relative to font size (default: 0.25)
+    #[arg(long, default_value_t = 0.25)]
+    word_gap: f64,
+
+    /// Include invisible text (e.g. OCR hidden text layer)
+    #[arg(long, default_value_t = false)]
+    include_invisible: bool,
+
+    /// Disable whitespace normalization
+    #[arg(long, default_value_t = false)]
+    no_normalize_whitespace: bool,
+}
+
+#[derive(Args, Debug)]
 struct BatchArgs {
     #[command(subcommand)]
     sub: BatchSubcommands,
@@ -391,6 +905,235 @@ enum BatchSubcommands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
+    /// Batch apply watermark across all PDFs in a folder
+    Watermark {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        #[arg(short, long)]
+        text: Option<String>,
+        #[arg(long)]
+        image: Option<PathBuf>,
+        #[arg(short, long, default_value = "all")]
+        pages: String,
+        #[arg(long, default_value = "diagonal")]
+        position: String,
+        #[arg(long)]
+        rotation: Option<f64>,
+        #[arg(long, default_value_t = 0.15)]
+        opacity: f64,
+        #[arg(long, default_value = "Helvetica-Bold")]
+        font: String,
+        #[arg(long)]
+        font_size: Option<f64>,
+        #[arg(long, default_value = "gray")]
+        color: String,
+        #[arg(long, default_value = "over")]
+        layer: String,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        flatten: bool,
+        #[arg(long)]
+        piece_info: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Batch apply page numbering across all PDFs in a folder
+    Number {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        #[arg(short, long, default_value = "Trang {page} / {total}")]
+        format: String,
+        #[arg(long, default_value = "bottom-center")]
+        position: String,
+        #[arg(short, long, default_value = "all")]
+        pages: String,
+        #[arg(long, default_value_t = 1)]
+        start_page: u32,
+        #[arg(long, default_value_t = 1)]
+        start_number: u32,
+        #[arg(long, default_value_t = 36.0)]
+        margin_x: f64,
+        #[arg(long, default_value_t = 24.0)]
+        margin_y: f64,
+        #[arg(long, default_value = "Helvetica")]
+        font: String,
+        #[arg(long, default_value_t = 10.0)]
+        font_size: f64,
+        #[arg(long, default_value = "#404040")]
+        color: String,
+        #[arg(long, default_value_t = 1.0)]
+        opacity: f64,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        flatten: bool,
+        #[arg(long)]
+        piece_info: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Batch rotate PDF pages across all PDFs in a folder
+    Rotate {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        /// Rotation angle in degrees (e.g. 90, 180, 270, -90)
+        #[arg(short, long)]
+        angle: Option<i32>,
+        /// Target orientation: "portrait" or "landscape"
+        #[arg(long)]
+        orientation: Option<String>,
+        /// Direction for orientation normalization: "cw" or "ccw"
+        #[arg(long, default_value = "cw")]
+        direction: String,
+        /// Auto-detect text orientation via content stream transformation matrices
+        #[arg(long, default_value_t = false)]
+        auto_text: bool,
+        /// Target pages: "all", "odd", "even", "first", "last", "1,3-5"
+        #[arg(short, long, default_value = "all")]
+        pages: String,
+        /// Set absolute rotation instead of relative
+        #[arg(long, default_value_t = false)]
+        absolute: bool,
+        /// Fallback angle for auto-text mode if page has no text
+        #[arg(long)]
+        fallback_angle: Option<i32>,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        flatten: bool,
+        #[arg(long)]
+        piece_info: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Batch remove pages across all PDFs in a folder
+    #[command(name = "remove-pages")]
+    RemovePages {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        /// Remove first page (cover)
+        #[arg(long, default_value_t = false)]
+        cover: bool,
+        /// Remove last page (back cover)
+        #[arg(long, default_value_t = false)]
+        back_cover: bool,
+        /// Remove detected blank/empty pages
+        #[arg(long, default_value_t = false)]
+        blank: bool,
+        /// Explicit pages or range to remove: "2", "3-5", "odd", "even"
+        #[arg(short, long)]
+        pages: Option<String>,
+        /// Explicit pages or range to keep / protect from removal
+        #[arg(long)]
+        keep_pages: Option<String>,
+        /// Minimum pages that must remain in document (default: 1)
+        #[arg(long, default_value_t = 1)]
+        min_pages: usize,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        flatten: bool,
+        #[arg(long)]
+        piece_info: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Batch crop pages across all PDFs in a folder
+    Crop {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        /// Margins in points: "top,bottom,left,right" or uniform "36"
+        #[arg(long)]
+        margins: Option<String>,
+        /// Relative margin fractions (0.0 to 1.0): "top,bottom,left,right"
+        #[arg(long)]
+        margins_relative: Option<String>,
+        /// Explicit bounding box in points: "llx,lly,urx,ury"
+        #[arg(long)]
+        r#box: Option<String>,
+        /// Automatically crop around content bounding box
+        #[arg(long, default_value_t = false)]
+        auto_content: bool,
+        /// Padding in points when using --auto-content (default: 18.0)
+        #[arg(long, default_value_t = 18.0)]
+        padding: f64,
+        /// Target PDF box to modify: "crop", "media", "trim", "bleed", "all"
+        #[arg(long, default_value = "crop")]
+        target_box: String,
+        /// Target pages: "all", "odd", "even", "1-3"
+        #[arg(short, long, default_value = "all")]
+        pages: String,
+        /// Disable clamping resulting box to MediaBox bounds
+        #[arg(long, default_value_t = false)]
+        no_clamp: bool,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        flatten: bool,
+        #[arg(long)]
+        piece_info: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Batch extract text across all PDFs in a folder
+    #[command(name = "extract-text")]
+    ExtractText {
+        #[arg(short, long)]
+        dir: PathBuf,
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        /// Target pages to extract: "all", "1-3", "odd", "even", "2"
+        #[arg(short, long, default_value = "all")]
+        pages: String,
+        /// Output granularity: "full", "blocks", "lines", "spans", "words"
+        #[arg(long, default_value = "full")]
+        granularity: String,
+        /// Output structured JSON with bounding boxes instead of plain text (.txt)
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// Disable natural reading order sorting
+        #[arg(long, default_value_t = false)]
+        no_reading_order: bool,
+        /// Vertical tolerance in points to group text spans into the same line (default: 3.5)
+        #[arg(long, default_value_t = 3.5)]
+        line_tolerance: f64,
+        /// Word gap factor relative to font size (default: 0.25)
+        #[arg(long, default_value_t = 0.25)]
+        word_gap: f64,
+        /// Include invisible text
+        #[arg(long, default_value_t = false)]
+        include_invisible: bool,
+        /// Disable whitespace normalization
+        #[arg(long, default_value_t = false)]
+        no_normalize_whitespace: bool,
+        #[arg(short, long, default_value_t = false)]
+        recursive: bool,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -405,6 +1148,56 @@ struct InspectImageArgs {
     /// Image file path (PNG or JPEG) to inspect embedded PieceInfo
     #[arg(short, long)]
     input: PathBuf,
+}
+
+fn decode_der_or_pem(data: &[u8]) -> Result<Vec<u8>, String> {
+    if let Ok(text) = std::str::from_utf8(data) {
+        if text.contains("-----BEGIN") {
+            let mut b64 = String::new();
+            let mut in_block = false;
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("-----BEGIN") {
+                    in_block = true;
+                    b64.clear();
+                } else if trimmed.starts_with("-----END") {
+                    break;
+                } else if in_block {
+                    b64.push_str(trimmed);
+                }
+            }
+            if !b64.is_empty() {
+                use base64::Engine;
+                return base64::engine::general_purpose::STANDARD
+                    .decode(&b64)
+                    .map_err(|e| format!("Base64 decode failed for PEM: {e}"));
+            }
+        }
+    }
+    Ok(data.to_vec())
+}
+
+fn extract_private_key_pem(data: &[u8]) -> Option<Vec<u8>> {
+    if let Ok(text) = std::str::from_utf8(data) {
+        let mut b64 = String::new();
+        let mut in_block = false;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("-----BEGIN") && trimmed.contains("PRIVATE KEY") {
+                in_block = true;
+                b64.clear();
+            } else if trimmed.starts_with("-----END") && trimmed.contains("PRIVATE KEY") {
+                use base64::Engine;
+                if let Ok(der) = base64::engine::general_purpose::STANDARD.decode(&b64) {
+                    return Some(der);
+                }
+                in_block = false;
+            } else if in_block {
+                b64.push_str(trimmed);
+            }
+        }
+    }
+    None
 }
 
 fn handle_legacy_args(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
@@ -631,6 +1424,322 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        Some(Commands::Watermark(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mut wm_opts = if let Some(ref tmpl_path) = args.template_json {
+                let tmpl_str = fs::read_to_string(tmpl_path)?;
+                serde_json::from_str::<WatermarkOptions>(&tmpl_str)?
+            } else {
+                WatermarkOptions::new()
+            };
+
+            if let Some(t) = args.text {
+                wm_opts.text = Some(t);
+            }
+            if let Some(img_path) = args.image {
+                let img_bytes = fs::read(&img_path)?;
+                wm_opts.image_bytes = Some(img_bytes);
+            }
+            wm_opts.pages = PageSelection::parse(&args.pages);
+            wm_opts.position = WatermarkPosition::parse(&args.position);
+            if let Some(rot) = args.rotation {
+                wm_opts.rotation = Some(rot);
+            }
+            wm_opts.opacity = args.opacity;
+            wm_opts.font_name = args.font;
+            if let Some(fs) = args.font_size {
+                wm_opts.font_size = Some(fs);
+            }
+            wm_opts.color = ColorRgb::parse(&args.color).map_err(std::io::Error::other)?;
+            wm_opts.layer = LayerMode::parse(&args.layer);
+            wm_opts.flatten = args.flatten;
+
+            if let Some(pi_path) = args.piece_info {
+                let pi_str = fs::read_to_string(pi_path)?;
+                let val = serde_json::from_str(&pi_str)?;
+                wm_opts.piece_info = Some(val);
+            }
+
+            let filename = args.input.file_stem().and_then(|s| s.to_str());
+            let mut doc = lopdf::Document::load_mem(&bytes)
+                .map_err(|e| std::io::Error::other(format!("Failed to parse PDF: {e}")))?;
+            pdftoolkit_core::ops::apply_watermark_to_doc(&mut doc, &wm_opts, filename)
+                .map_err(std::io::Error::other)?;
+
+            let mut out = Vec::new();
+            doc.save_to(&mut out)
+                .map_err(|e| std::io::Error::other(format!("Failed to save PDF: {e}")))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, &out)?;
+            println!("Watermark applied: {}", args.output.display());
+        }
+
+        Some(Commands::Number(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mut num_opts = NumberingOptions::new()
+                .format(args.format)
+                .position(NumberingPosition::parse(&args.position))
+                .pages(PageSelection::parse(&args.pages))
+                .start_page(args.start_page)
+                .start_number(args.start_number)
+                .margin(args.margin_x, args.margin_y)
+                .font(args.font)
+                .font_size(args.font_size)
+                .color(ColorRgb::parse(&args.color).map_err(std::io::Error::other)?)
+                .opacity(args.opacity)
+                .flatten(args.flatten);
+
+            num_opts.layer = LayerMode::parse(&args.layer);
+
+            if let Some(pi_path) = args.piece_info {
+                let pi_str = fs::read_to_string(pi_path)?;
+                let val = serde_json::from_str(&pi_str)?;
+                num_opts.piece_info = Some(val);
+            }
+
+            let filename = args.input.file_stem().and_then(|s| s.to_str());
+            let mut doc = lopdf::Document::load_mem(&bytes)
+                .map_err(|e| std::io::Error::other(format!("Failed to parse PDF: {e}")))?;
+            pdftoolkit_core::ops::apply_page_numbering_to_doc(&mut doc, &num_opts, filename)
+                .map_err(std::io::Error::other)?;
+
+            let mut out = Vec::new();
+            doc.save_to(&mut out)
+                .map_err(|e| std::io::Error::other(format!("Failed to save PDF: {e}")))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, &out)?;
+            println!("Page numbering applied: {}", args.output.display());
+        }
+
+        Some(Commands::Rotate(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mode = if args.auto_text {
+                RotationMode::AutoDetectText {
+                    fallback_angle: args.fallback_angle,
+                }
+            } else if let Some(ref ori_str) = args.orientation {
+                let target = match TargetOrientation::parse(ori_str) {
+                    Some(t) => t,
+                    None => {
+                        eprintln!("Invalid orientation: expected 'portrait' or 'landscape'");
+                        std::process::exit(1);
+                    }
+                };
+                let dir = RotationDirection::parse(&args.direction);
+                RotationMode::ToOrientation {
+                    target,
+                    direction: dir,
+                }
+            } else {
+                let deg = args.angle.unwrap_or(90);
+                RotationMode::Angle {
+                    degrees: deg,
+                    relative: !args.absolute,
+                }
+            };
+
+            let mut opts = RotateOptions::new()
+                .pages(PageSelection::parse(&args.pages))
+                .flatten(args.flatten);
+            opts.mode = mode;
+
+            if let Some(p) = args.piece_info {
+                let pi_str = fs::read_to_string(p)?;
+                let val = serde_json::from_str(&pi_str)?;
+                opts.piece_info = Some(val);
+            }
+
+            let (rotated_bytes, report) =
+                rotate_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, rotated_bytes)?;
+
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "Successfully rotated {}/{} pages -> '{}'",
+                    report.rotated_pages,
+                    report.total_pages,
+                    args.output.display()
+                );
+            }
+        }
+
+        Some(Commands::RemovePages(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mut opts = RemovePagesOptions::new()
+                .remove_cover(args.cover)
+                .remove_back_cover(args.back_cover)
+                .remove_blank_pages(args.blank)
+                .min_pages_retained(args.min_pages)
+                .flatten(args.flatten);
+
+            if let Some(p) = &args.pages {
+                opts = opts.pages_str(p);
+            }
+            if let Some(kp) = &args.keep_pages {
+                opts = opts.keep_pages_str(kp);
+            }
+            if let Some(pi_path) = args.piece_info {
+                let pi_str = fs::read_to_string(pi_path)?;
+                let val = serde_json::from_str(&pi_str)?;
+                opts.piece_info = Some(val);
+            }
+
+            let (result_bytes, report) =
+                remove_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, result_bytes)?;
+
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "Successfully removed {} page(s), retained {}/{} -> '{}'",
+                    report.removed_pages.len(),
+                    report.retained_pages,
+                    report.original_pages,
+                    args.output.display()
+                );
+            }
+        }
+
+        Some(Commands::Crop(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mut opts = CropOptions::new()
+                .target_box(TargetBox::parse(&args.target_box))
+                .pages_str(&args.pages)
+                .clamp_to_media_box(!args.no_clamp)
+                .flatten(args.flatten);
+
+            if args.auto_content {
+                opts = opts.auto_detect_content(args.padding);
+            } else if let Some(box_str) = &args.r#box {
+                let parts: Vec<f64> = box_str
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f64>().ok())
+                    .collect();
+                if parts.len() != 4 {
+                    eprintln!("Invalid box format: expected 'llx,lly,urx,ury'");
+                    std::process::exit(1);
+                }
+                opts = opts.crop_box([parts[0], parts[1], parts[2], parts[3]]);
+            } else if let Some(m_rel) = &args.margins_relative {
+                let parts: Vec<f64> = m_rel
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f64>().ok())
+                    .collect();
+                if parts.len() == 1 {
+                    opts = opts.margins_relative(parts[0], parts[0], parts[0], parts[0]);
+                } else if parts.len() == 4 {
+                    opts = opts.margins_relative(parts[0], parts[1], parts[2], parts[3]);
+                } else {
+                    eprintln!(
+                        "Invalid margins-relative format: expected 1 or 4 values (top,bottom,left,right)"
+                    );
+                    std::process::exit(1);
+                }
+            } else if let Some(m_str) = &args.margins {
+                let parts: Vec<f64> = m_str
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f64>().ok())
+                    .collect();
+                if parts.len() == 1 {
+                    opts = opts.margins_uniform(parts[0]);
+                } else if parts.len() == 4 {
+                    opts = opts.margins(parts[0], parts[1], parts[2], parts[3]);
+                } else {
+                    eprintln!(
+                        "Invalid margins format: expected 1 or 4 values (top,bottom,left,right)"
+                    );
+                    std::process::exit(1);
+                }
+            }
+
+            if let Some(pi_path) = args.piece_info {
+                let pi_str = fs::read_to_string(pi_path)?;
+                let val = serde_json::from_str(&pi_str)?;
+                opts.piece_info = Some(val);
+            }
+
+            let (cropped_bytes, report) =
+                crop_pdf_pages(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, cropped_bytes)?;
+
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "Successfully cropped {}/{} pages -> '{}'",
+                    report.cropped_pages,
+                    report.total_pages,
+                    args.output.display()
+                );
+            }
+        }
+
+        Some(Commands::ExtractText(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let opts = TextExtractionOptions::new()
+                .pages(PageSelection::parse(&args.pages))
+                .granularity(TextGranularity::parse(&args.granularity))
+                .sort_reading_order(!args.no_reading_order)
+                .line_tolerance(args.line_tolerance)
+                .word_gap_factor(args.word_gap)
+                .include_invisible(args.include_invisible)
+                .normalize_whitespace(!args.no_normalize_whitespace);
+
+            if args.json {
+                let report =
+                    extract_text_structured(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+                let json_str = serde_json::to_string_pretty(&report)?;
+
+                if let Some(out_path) = &args.output {
+                    if let Some(parent) = out_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(out_path, &json_str)?;
+                    println!(
+                        "Successfully extracted text ({} characters, {} words) -> '{}'",
+                        report.total_characters,
+                        report.total_words,
+                        out_path.display()
+                    );
+                } else {
+                    println!("{json_str}");
+                }
+            } else {
+                let text = extract_text(&bytes, &opts).map_err(|e| std::io::Error::other(e))?;
+
+                if let Some(out_path) = &args.output {
+                    if let Some(parent) = out_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(out_path, &text)?;
+                    println!("Successfully extracted text -> '{}'", out_path.display());
+                } else {
+                    print!("{text}");
+                }
+            }
+        }
+
         Some(Commands::Batch(args)) => match args.sub {
             BatchSubcommands::Fill {
                 template,
@@ -830,6 +1939,371 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     output_dir.display()
                 );
             }
+
+            BatchSubcommands::Watermark {
+                dir,
+                output_dir,
+                text,
+                image,
+                pages,
+                position,
+                rotation,
+                opacity,
+                font,
+                font_size,
+                color,
+                layer,
+                recursive,
+                filter,
+                flatten,
+                piece_info,
+                dry_run,
+            } => {
+                let mut wm_opts = WatermarkOptions::new();
+                wm_opts.text = text;
+                if let Some(img_path) = image {
+                    let img_bytes = fs::read(&img_path)?;
+                    wm_opts.image_bytes = Some(img_bytes);
+                }
+                wm_opts.pages = PageSelection::parse(&pages);
+                wm_opts.position = WatermarkPosition::parse(&position);
+                wm_opts.rotation = rotation;
+                wm_opts.opacity = opacity;
+                wm_opts.font_name = font;
+                wm_opts.font_size = font_size;
+                wm_opts.color = ColorRgb::parse(&color).map_err(std::io::Error::other)?;
+                wm_opts.layer = LayerMode::parse(&layer);
+                wm_opts.flatten = flatten;
+
+                if let Some(p) = piece_info {
+                    let pi_str = fs::read_to_string(p)?;
+                    let val = serde_json::from_str(&pi_str)?;
+                    wm_opts.piece_info = Some(val);
+                }
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep =
+                    batch_watermark_dir_with_options(&dir, &output_dir, &wm_opts, &batch_opts)
+                        .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch watermarking completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
+
+            BatchSubcommands::Number {
+                dir,
+                output_dir,
+                format,
+                position,
+                pages,
+                start_page,
+                start_number,
+                margin_x,
+                margin_y,
+                font,
+                font_size,
+                color,
+                opacity,
+                recursive,
+                filter,
+                flatten,
+                piece_info,
+                dry_run,
+            } => {
+                let mut num_opts = NumberingOptions::new()
+                    .format(format)
+                    .position(NumberingPosition::parse(&position))
+                    .pages(PageSelection::parse(&pages))
+                    .start_page(start_page)
+                    .start_number(start_number)
+                    .margin(margin_x, margin_y)
+                    .font(font)
+                    .font_size(font_size)
+                    .color(ColorRgb::parse(&color).map_err(std::io::Error::other)?)
+                    .opacity(opacity)
+                    .flatten(flatten);
+
+                if let Some(p) = piece_info {
+                    let pi_str = fs::read_to_string(p)?;
+                    let val = serde_json::from_str(&pi_str)?;
+                    num_opts.piece_info = Some(val);
+                }
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep = batch_number_dir_with_options(&dir, &output_dir, &num_opts, &batch_opts)
+                    .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch page numbering completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
+
+            BatchSubcommands::Rotate {
+                dir,
+                output_dir,
+                angle,
+                orientation,
+                direction,
+                auto_text,
+                pages,
+                absolute,
+                fallback_angle,
+                recursive,
+                filter,
+                flatten,
+                piece_info,
+                dry_run,
+            } => {
+                let mode = if auto_text {
+                    RotationMode::AutoDetectText { fallback_angle }
+                } else if let Some(ref ori_str) = orientation {
+                    let target = match TargetOrientation::parse(ori_str) {
+                        Some(t) => t,
+                        None => {
+                            eprintln!("Invalid orientation: expected 'portrait' or 'landscape'");
+                            std::process::exit(1);
+                        }
+                    };
+                    let dir = RotationDirection::parse(&direction);
+                    RotationMode::ToOrientation {
+                        target,
+                        direction: dir,
+                    }
+                } else {
+                    let deg = angle.unwrap_or(90);
+                    RotationMode::Angle {
+                        degrees: deg,
+                        relative: !absolute,
+                    }
+                };
+
+                let mut rot_opts = RotateOptions::new()
+                    .pages(PageSelection::parse(&pages))
+                    .flatten(flatten);
+                rot_opts.mode = mode;
+
+                if let Some(p) = piece_info {
+                    let pi_str = fs::read_to_string(p)?;
+                    let val = serde_json::from_str(&pi_str)?;
+                    rot_opts.piece_info = Some(val);
+                }
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep = batch_rotate_dir_with_options(&dir, &output_dir, &rot_opts, &batch_opts)
+                    .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch page rotation completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
+
+            BatchSubcommands::RemovePages {
+                dir,
+                output_dir,
+                cover,
+                back_cover,
+                blank,
+                pages,
+                keep_pages,
+                min_pages,
+                recursive,
+                filter,
+                flatten,
+                piece_info,
+                dry_run,
+            } => {
+                let mut remove_opts = RemovePagesOptions::new()
+                    .remove_cover(cover)
+                    .remove_back_cover(back_cover)
+                    .remove_blank_pages(blank)
+                    .min_pages_retained(min_pages)
+                    .flatten(flatten);
+
+                if let Some(p) = pages {
+                    remove_opts = remove_opts.pages_str(&p);
+                }
+                if let Some(kp) = keep_pages {
+                    remove_opts = remove_opts.keep_pages_str(&kp);
+                }
+                if let Some(p) = piece_info {
+                    let pi_str = fs::read_to_string(p)?;
+                    let val = serde_json::from_str(&pi_str)?;
+                    remove_opts.piece_info = Some(val);
+                }
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep = batch_remove_pages_dir_with_options(
+                    &dir,
+                    &output_dir,
+                    &remove_opts,
+                    &batch_opts,
+                )
+                .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch page removal completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
+
+            BatchSubcommands::Crop {
+                dir,
+                output_dir,
+                margins,
+                margins_relative,
+                r#box,
+                auto_content,
+                padding,
+                target_box,
+                pages,
+                no_clamp,
+                recursive,
+                filter,
+                flatten,
+                piece_info,
+                dry_run,
+            } => {
+                let mut crop_opts = CropOptions::new()
+                    .target_box(TargetBox::parse(&target_box))
+                    .pages_str(&pages)
+                    .clamp_to_media_box(!no_clamp)
+                    .flatten(flatten);
+
+                if auto_content {
+                    crop_opts = crop_opts.auto_detect_content(padding);
+                } else if let Some(box_str) = &r#box {
+                    let parts: Vec<f64> = box_str
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<f64>().ok())
+                        .collect();
+                    if parts.len() != 4 {
+                        eprintln!("Invalid box format: expected 'llx,lly,urx,ury'");
+                        std::process::exit(1);
+                    }
+                    crop_opts = crop_opts.crop_box([parts[0], parts[1], parts[2], parts[3]]);
+                } else if let Some(m_rel) = &margins_relative {
+                    let parts: Vec<f64> = m_rel
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<f64>().ok())
+                        .collect();
+                    if parts.len() == 1 {
+                        crop_opts =
+                            crop_opts.margins_relative(parts[0], parts[0], parts[0], parts[0]);
+                    } else if parts.len() == 4 {
+                        crop_opts =
+                            crop_opts.margins_relative(parts[0], parts[1], parts[2], parts[3]);
+                    } else {
+                        eprintln!(
+                            "Invalid margins-relative format: expected 1 or 4 values (top,bottom,left,right)"
+                        );
+                        std::process::exit(1);
+                    }
+                } else if let Some(m_str) = &margins {
+                    let parts: Vec<f64> = m_str
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<f64>().ok())
+                        .collect();
+                    if parts.len() == 1 {
+                        crop_opts = crop_opts.margins_uniform(parts[0]);
+                    } else if parts.len() == 4 {
+                        crop_opts = crop_opts.margins(parts[0], parts[1], parts[2], parts[3]);
+                    } else {
+                        eprintln!(
+                            "Invalid margins format: expected 1 or 4 values (top,bottom,left,right)"
+                        );
+                        std::process::exit(1);
+                    }
+                }
+
+                if let Some(p) = piece_info {
+                    let pi_str = fs::read_to_string(p)?;
+                    let val = serde_json::from_str(&pi_str)?;
+                    crop_opts.piece_info = Some(val);
+                }
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep = batch_crop_dir_with_options(&dir, &output_dir, &crop_opts, &batch_opts)
+                    .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch page cropping completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
+
+            BatchSubcommands::ExtractText {
+                dir,
+                output_dir,
+                pages,
+                granularity,
+                json,
+                no_reading_order,
+                line_tolerance,
+                word_gap,
+                include_invisible,
+                no_normalize_whitespace,
+                recursive,
+                filter,
+                dry_run,
+            } => {
+                let text_opts = TextExtractionOptions::new()
+                    .pages(PageSelection::parse(&pages))
+                    .granularity(TextGranularity::parse(&granularity))
+                    .sort_reading_order(!no_reading_order)
+                    .line_tolerance(line_tolerance)
+                    .word_gap_factor(word_gap)
+                    .include_invisible(include_invisible)
+                    .normalize_whitespace(!no_normalize_whitespace);
+
+                let mut batch_opts = BatchOptions::new().recursive(recursive).dry_run(dry_run);
+                if let Some(f) = filter {
+                    batch_opts = batch_opts.filter_pattern(f);
+                }
+
+                let rep = batch_extract_text_dir_with_options(
+                    &dir,
+                    &output_dir,
+                    &text_opts,
+                    json,
+                    &batch_opts,
+                )
+                .map_err(std::io::Error::other)?;
+
+                println!(
+                    "Batch text extraction completed for {} documents into '{}'",
+                    rep.successful,
+                    output_dir.display()
+                );
+            }
         },
 
         Some(Commands::Inspect(args)) => {
@@ -853,6 +2327,227 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(e) => {
                     eprintln!("Error inspecting image metadata: {e}");
                     std::process::exit(1);
+                }
+            }
+        }
+
+        Some(Commands::AddSigField(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let mut opts = AddSignatureFieldOptions::new(&args.name);
+            if let Some(p) = args.page {
+                opts = opts.page(p);
+            }
+            if args.invisible {
+                opts = opts.invisible();
+            } else if let Some(rect_str) = &args.rect {
+                let parts: Vec<f64> = rect_str
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f64>().ok())
+                    .collect();
+                if parts.len() != 4 {
+                    eprintln!("Invalid rect format: expected 'llx,lly,urx,ury'");
+                    std::process::exit(1);
+                }
+                opts = opts.rect(parts[0], parts[1], parts[2], parts[3]);
+            } else if let Some(pos_str) = &args.position {
+                let preset = FieldPresetPosition::parse(pos_str);
+                opts = opts.preset_with_margins(
+                    preset,
+                    args.width,
+                    args.height,
+                    args.margin_x,
+                    args.margin_y,
+                );
+            } else {
+                opts = opts.preset_with_margins(
+                    FieldPresetPosition::BottomRight,
+                    args.width,
+                    args.height,
+                    args.margin_x,
+                    args.margin_y,
+                );
+            }
+
+            let result_bytes = add_signature_field(&bytes, &opts)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, result_bytes)?;
+            println!(
+                "Successfully added signature field '{}' -> '{}'",
+                args.name,
+                args.output.display()
+            );
+        }
+
+        Some(Commands::RemoveSigField(args)) => {
+            let bytes = fs::read(&args.input)?;
+            let opts = if args.all {
+                RemoveSignatureFieldOptions::all()
+            } else if args.all_unsigned {
+                RemoveSignatureFieldOptions::all_unsigned()
+            } else if let Some(n) = &args.name {
+                RemoveSignatureFieldOptions::by_name(n)
+            } else {
+                RemoveSignatureFieldOptions::all_unsigned()
+            };
+
+            let (result_bytes, removed_count) = remove_signature_field(&bytes, &opts)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, result_bytes)?;
+            println!(
+                "Removed {} signature field(s) -> '{}'",
+                removed_count,
+                args.output.display()
+            );
+        }
+
+        Some(Commands::Sign(args)) => {
+            let pdf_bytes = fs::read(&args.input)?;
+            let cert_raw = fs::read(&args.cert)?;
+            let cert_der = decode_der_or_pem(&cert_raw)
+                .map_err(|e| std::io::Error::other(format!("Certificate error: {e}")))?;
+
+            let key_der = if let Some(key_path) = &args.key {
+                let key_raw = fs::read(key_path)?;
+                decode_der_or_pem(&key_raw)
+                    .map_err(|e| std::io::Error::other(format!("Private key error: {e}")))?
+            } else if let Some(extracted_key) = extract_private_key_pem(&cert_raw) {
+                extracted_key
+            } else {
+                eprintln!(
+                    "Error: Private key not provided. Use --key <KEY_PATH> or bundle PEM in --cert"
+                );
+                std::process::exit(1);
+            };
+
+            let signer: Box<dyn Signer> = if let Ok(rsa_signer) =
+                CertificateSigner::from_pkcs8_der(cert_der.clone(), &key_der)
+            {
+                Box::new(rsa_signer)
+            } else if let Ok(ecdsa_signer) = EcdsaSigner::from_pkcs8_der(cert_der.clone(), &key_der)
+            {
+                Box::new(ecdsa_signer)
+            } else {
+                eprintln!("Error: Failed to parse private key as PKCS#8 RSA or ECDSA.");
+                std::process::exit(1);
+            };
+
+            let mut builder = PdfSigner::new()
+                .field(&args.field)
+                .signer(signer)
+                .flatten(args.flatten);
+
+            if let Some(r) = &args.reason {
+                builder = builder.reason(r);
+            }
+            if let Some(l) = &args.location {
+                builder = builder.location(l);
+            }
+            if let Some(c) = &args.contact {
+                builder = builder.contact(c);
+            }
+
+            if args.auto_create_field {
+                builder = builder.auto_create_field(true);
+                if let Some(p) = args.page {
+                    builder = builder.page(p);
+                }
+                if args.invisible {
+                    builder = builder.placement(SignaturePlacement::Invisible);
+                } else if let Some(rect_str) = &args.rect {
+                    let parts: Vec<f64> = rect_str
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<f64>().ok())
+                        .collect();
+                    if parts.len() == 4 {
+                        builder = builder.placement(SignaturePlacement::Rect([
+                            parts[0], parts[1], parts[2], parts[3],
+                        ]));
+                    }
+                } else if let Some(pos_str) = &args.position {
+                    let preset = FieldPresetPosition::parse(pos_str);
+                    builder = builder.placement(SignaturePlacement::Preset {
+                        position: preset,
+                        width: 150.0,
+                        height: 50.0,
+                        margin_x: 36.0,
+                        margin_y: 36.0,
+                    });
+                }
+            }
+
+            let signed_bytes = builder
+                .sign(&pdf_bytes)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+            if let Some(parent) = args.output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&args.output, signed_bytes)?;
+            println!(
+                "Successfully digitally signed PDF -> '{}' (field: '{}')",
+                args.output.display(),
+                args.field
+            );
+        }
+
+        Some(Commands::Verify(args)) => {
+            let pdf_bytes = fs::read(&args.input)?;
+            let results = verify_pdf_signatures(&pdf_bytes)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                if results.is_empty() {
+                    println!("No digital signatures found in '{}'.", args.input.display());
+                } else {
+                    println!("=== Digital Signature Verification Report ===");
+                    println!("File: {}", args.input.display());
+                    println!("Signatures Found: {}", results.len());
+                    println!("--------------------------------------------------");
+                    for (idx, sig) in results.iter().enumerate() {
+                        println!("[Signature #{}] Field: '{}'", idx + 1, sig.field_name);
+                        println!(
+                            "  Status:          {}",
+                            if sig.is_valid {
+                                "VALID ✓"
+                            } else {
+                                "INVALID ✗"
+                            }
+                        );
+                        println!(
+                            "  Digest Matched:  {}",
+                            if sig.digest_matched { "YES" } else { "NO" }
+                        );
+                        if let Some(subj) = &sig.signer_subject {
+                            println!("  Signer Subject:  {}", subj);
+                        }
+                        if let Some(issuer) = &sig.signer_issuer {
+                            println!("  Issuer:          {}", issuer);
+                        }
+                        if let (Some(start), Some(end)) = (&sig.validity_start, &sig.validity_end) {
+                            println!("  Validity:        {} -> {}", start, end);
+                        }
+                        if let Some(r) = &sig.reason {
+                            println!("  Reason:          {}", r);
+                        }
+                        if let Some(l) = &sig.location {
+                            println!("  Location:        {}", l);
+                        }
+                        println!("  ByteRange:       {:?}", sig.byte_range);
+                        if let Some(err) = &sig.error {
+                            println!("  Warning/Error:   {}", err);
+                        }
+                        println!("--------------------------------------------------");
+                    }
                 }
             }
         }

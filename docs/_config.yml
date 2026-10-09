@@ -1,0 +1,27 @@
+# Site settings
+title: rust-pdf-toolkit
+description: "High-performance, pure-Rust and WASM-compatible PDF toolkit"
+url: "https://lebavuongquyen.github.io"
+baseurl: "/rust-pdf-toolkit"
+
+# Theme settings (Supported out-of-the-box by GitHub Pages)
+remote_theme: just-the-docs/just-the-docs
+
+# Navigation & Search
+search_enabled: true
+heading_anchors: true
+nav_sort: nav_order
+
+# Kramdown & Rouge
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# Aux links in header
+aux_links:
+  "GitHub Repository":
+    - "https://github.com/lebavuongquyen/rust-pdf-toolkit"
+
+# Footer
+footer_content: "Copyright &copy; 2026 rust-pdf-toolkit. Built with Jekyll and GitHub Pages."

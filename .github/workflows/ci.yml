@@ -1,0 +1,98 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # 1. Native Build & Test Matrix (Ubuntu & Windows)
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Check compilation
+        run: cargo check --all-targets --verbose
+
+      - name: Build binaries and library
+        run: cargo build --verbose
+
+      - name: Run test suite
+        run: cargo test --verbose
+
+  # 2. WebAssembly (WASM) Target Compilation
+  wasm:
+    name: Build WASM (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain with wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+
+      - name: Check WASM library build
+        run: cargo check --target wasm32-unknown-unknown --lib
+
+      - name: Build release WASM package
+        run: cargo build --target wasm32-unknown-unknown --release --lib
+
+  # 3. Code Quality (Formatting & Clippy Lints)
+  lint:
+    name: Code Quality (Fmt & Clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain with clippy & rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check code formatting (rustfmt)
+        run: cargo fmt --all -- --check
+
+      - name: Lint code with Clippy
+        run: cargo clippy --all-targets -- -D warnings

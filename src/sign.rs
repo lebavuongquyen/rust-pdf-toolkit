@@ -100,6 +100,18 @@ mod wasm {
             self
         }
 
+        pub fn auto_create_field(self, _enabled: bool) -> Self {
+            self
+        }
+
+        pub fn placement(self, _placement: crate::ops::SignaturePlacement) -> Self {
+            self
+        }
+
+        pub fn page(self, _page: u32) -> Self {
+            self
+        }
+
         pub fn piece_info(self, _value: serde_json::Value) -> Self {
             self
         }

@@ -168,6 +168,20 @@ impl Signer for EcdsaSigner {
     }
 }
 
+impl<T: Signer + ?Sized> Signer for Box<T> {
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, SignError> {
+        (**self).sign(data)
+    }
+
+    fn certificate_chain(&self) -> &[Vec<u8>] {
+        (**self).certificate_chain()
+    }
+
+    fn cms_signature_mode(&self) -> CmsSignatureMode {
+        (**self).cms_signature_mode()
+    }
+}
+
 pub struct PdfSigner {
     field: Option<String>,
     signer: Option<Box<dyn Signer>>,
@@ -179,6 +193,9 @@ pub struct PdfSigner {
     appearance: Option<crate::appearance::SignatureAppearanceOptions>,
     piece_info: Option<serde_json::Value>,
     locked_piece_info: Option<crate::LockedPieceInfoConfig>,
+    auto_create_field: bool,
+    placement: Option<crate::ops::SignaturePlacement>,
+    page: Option<u32>,
 }
 
 impl PdfSigner {
@@ -194,6 +211,9 @@ impl PdfSigner {
             appearance: None,
             piece_info: None,
             locked_piece_info: None,
+            auto_create_field: false,
+            placement: None,
+            page: None,
         }
     }
 
@@ -273,6 +293,21 @@ impl PdfSigner {
         self
     }
 
+    pub fn auto_create_field(mut self, enabled: bool) -> Self {
+        self.auto_create_field = enabled;
+        self
+    }
+
+    pub fn placement(mut self, placement: crate::ops::SignaturePlacement) -> Self {
+        self.placement = Some(placement);
+        self
+    }
+
+    pub fn page(mut self, page: u32) -> Self {
+        self.page = Some(page);
+        self
+    }
+
     pub fn validate(&self, pdf: &[u8]) -> Result<(), SignError> {
         let field_name = self
             .field
@@ -289,16 +324,17 @@ impl PdfSigner {
         }
         let doc = Document::load_mem(pdf).map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
         let fields = crate::collect_fields(&doc);
-        let Some((_, field, field_type)) = fields.get(field_name) else {
+        if let Some((_, field, field_type)) = fields.get(field_name) {
+            if field_type.as_slice() != b"Sig" {
+                return Err(SignError::InvalidSignatureField(field_name.into()));
+            }
+            if field.get(b"V").is_ok() {
+                return Err(SignError::InvalidSignatureField(format!(
+                    "{field_name} is already signed"
+                )));
+            }
+        } else if !self.auto_create_field {
             return Err(SignError::SignatureFieldNotFound(field_name.into()));
-        };
-        if field_type.as_slice() != b"Sig" {
-            return Err(SignError::InvalidSignatureField(field_name.into()));
-        }
-        if field.get(b"V").is_ok() {
-            return Err(SignError::InvalidSignatureField(format!(
-                "{field_name} is already signed"
-            )));
         }
         Ok(())
     }
@@ -321,6 +357,28 @@ impl PdfSigner {
         }
 
         let mut base_pdf = pdf.to_vec();
+
+        // If field does not exist yet and auto_create_field is enabled, create it now
+        {
+            let doc_check = Document::load_mem(&base_pdf)
+                .map_err(|e| SignError::PdfLoadFailed(e.to_string()))?;
+            let fields_check = crate::collect_fields(&doc_check);
+            if !fields_check.contains_key(field_name) {
+                if self.auto_create_field {
+                    let mut opts = crate::ops::AddSignatureFieldOptions::new(field_name);
+                    if let Some(p) = self.page {
+                        opts = opts.page(p);
+                    }
+                    if let Some(ref pl) = self.placement {
+                        opts = opts.placement(pl.clone());
+                    }
+                    base_pdf = crate::ops::add_signature_field(&base_pdf, &opts)
+                        .map_err(SignError::SigningFailed)?;
+                } else {
+                    return Err(SignError::SignatureFieldNotFound(field_name.into()));
+                }
+            }
+        }
         if self.flatten
             || self.appearance.is_some()
             || self.piece_info.is_some()
