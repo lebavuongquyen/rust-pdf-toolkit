@@ -1,0 +1,589 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<<
+  /Type /Catalog
+  /Pages 2 0 R
+  /AcroForm 4 0 R
+>>
+endobj
+2 0 obj
+<<
+  /Type /Pages
+  /Kids [ 3 0 R ]
+  /Count 1
+>>
+endobj
+3 0 obj
+<<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [ 0 0 595.28 841.89 ]
+  /Contents 7 0 R
+  /Resources <<
+    /Font <<
+      /Helv 5 0 R
+      /HelvB 6 0 R
+    >>
+    /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+  >>
+  /Annots [ 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 17 0 R 18 0 R 19 0 R 20 0 R 21 0 R 22 0 R ]
+>>
+endobj
+4 0 obj
+<<
+  /Fields [ 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 19 0 R 20 0 R 21 0 R 22 0 R ]
+  /NeedAppearances true
+  /DR <<
+    /Font <<
+      /Helv 5 0 R
+      /HelvB 6 0 R
+    >>
+  >>
+  /DA (/Helv 10 Tf 0 0 0 rg)
+  /SigFlags 3
+>>
+endobj
+5 0 obj
+<<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Helvetica
+  /Encoding /WinAnsiEncoding
+>>
+endobj
+6 0 obj
+<<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Helvetica-Bold
+  /Encoding /WinAnsiEncoding
+>>
+endobj
+7 0 obj
+<<
+  /Length 3108
+>>
+stream
+q
+% Background canvas
+1 1 1 rg
+0 0 595.28 841.89 re f
+
+% Top Banner
+0.08 0.14 0.25 rg
+0 760 595.28 82 re f
+
+% Gold accent line
+0.85 0.65 0.13 rg
+0 758 595.28 2 re f
+
+% Header Text
+BT
+/HelvB 16 Tf
+1 1 1 rg
+45 802 Td
+(ENTERPRISE EMPLOYMENT APPLICATION FORM) Tj
+ET
+
+BT
+/Helv 9.5 Tf
+0.75 0.82 0.92 rg
+45 778 Td
+(Official ISO 32000-1 Interactive PDF Specification Template | Pure Rust & WASM Ready) Tj
+ET
+
+% SECTION 1: PERSONAL INFORMATION
+0.94 0.96 0.98 rg
+40 722 515 22 re f
+0.2 0.35 0.6 rg
+40 722 4 22 re f
+
+BT
+/HelvB 10.5 Tf
+0.1 0.18 0.35 rg
+52 729 Td
+(1. PERSONAL INFORMATION) Tj
+ET
+
+% Field Labels: Section 1
+BT
+/Helv 8.5 Tf
+0.3 0.3 0.3 rg
+45 700 Td (Full Legal Name *) Tj
+305 700 Td (Email Address *) Tj
+45 648 Td (Phone Number *) Tj
+305 648 Td (Date of Birth (DD/MM/YYYY) *) Tj
+445 648 Td (Gender) Tj
+ET
+
+% Radio Labels
+BT
+/Helv 8.5 Tf
+0.25 0.25 0.25 rg
+465 621 Td (Male) Tj
+518 621 Td (Female) Tj
+ET
+
+% Field visual bounding box outlines (Section 1)
+0.82 0.85 0.9 rg
+0.75 w
+45 665 245 24 re S
+305 665 245 24 re S
+45 615 245 24 re S
+305 615 125 24 re S
+
+% SECTION 2: PROFESSIONAL & POSITION DETAILS
+0.94 0.96 0.98 rg
+40 575 515 22 re f
+0.2 0.35 0.6 rg
+40 575 4 22 re f
+
+BT
+/HelvB 10.5 Tf
+0.1 0.18 0.35 rg
+52 582 Td
+(2. PROFESSIONAL & POSITION DETAILS) Tj
+ET
+
+% Field Labels: Section 2
+BT
+/Helv 8.5 Tf
+0.3 0.3 0.3 rg
+45 553 Td (Applied Position / Job Title *) Tj
+305 553 Td (Department *) Tj
+45 498 Td (Core Competencies & Skills (ListBox)) Tj
+330 498 Td (Applicant Photo (Image Field)) Tj
+ET
+
+% Field visual bounding box outlines (Section 2)
+45 520 245 24 re S
+305 520 245 24 re S
+45 425 245 65 re S
+
+% Photo frame (dashed line)
+[3 3] 0 d
+0.7 0.7 0.7 rg
+330 415 140 75 re S
+[] 0 d
+
+BT
+/Helv 8 Tf
+0.6 0.6 0.6 rg
+355 450 Td ([ Click or fill photo ]) Tj
+ET
+
+% SECTION 3: DECLARATIONS & TERMS
+0.94 0.96 0.98 rg
+40 375 515 22 re f
+0.2 0.35 0.6 rg
+40 375 4 22 re f
+
+BT
+/HelvB 10.5 Tf
+0.1 0.18 0.35 rg
+52 382 Td
+(3. DECLARATION & TERMS) Tj
+ET
+
+BT
+/Helv 8.5 Tf
+0.2 0.2 0.2 rg
+68 348 Td (I certify that all statements given in this application are true, accurate and complete.) Tj
+68 322 Td (I agree to receive electronic employment notifications, verification alerts, and updates.) Tj
+ET
+
+% SECTION 4: DIGITAL SIGNATURES & VERIFICATION
+0.94 0.96 0.98 rg
+40 280 515 22 re f
+0.2 0.35 0.6 rg
+40 280 4 22 re f
+
+BT
+/HelvB 10.5 Tf
+0.1 0.18 0.35 rg
+52 287 Td
+(4. DIGITAL SIGNATURES & VERIFICATION (PKCS#7 / CMS)) Tj
+ET
+
+% Signature Boxes (Dashed)
+[4 3] 0 d
+0.65 0.68 0.75 rg
+45 155 240 105 re S
+310 155 240 105 re S
+[] 0 d
+
+% Signature Box Labels
+BT
+/HelvB 8.5 Tf
+0.2 0.25 0.35 rg
+55 245 Td (Applicant Digital Signature (/Sig)) Tj
+320 245 Td (Authorized Approver / Manager (/Sig)) Tj
+ET
+
+BT
+/Helv 8 Tf
+0.5 0.5 0.5 rg
+55 200 Td ([ Digitally sign with Certificate ]) Tj
+55 185 Td (Supports RSA PKCS#1 & ECDSA P-384) Tj
+320 200 Td ([ Authorized Seal & Signature ]) Tj
+320 185 Td (Locks document upon execution) Tj
+ET
+
+% Footer
+0.88 0.88 0.9 rg
+40 45 515 1 re f
+
+BT
+/Helv 7.5 Tf
+0.45 0.45 0.45 rg
+40 32 Td (Document ID: REF-APP-2026-STD  |  ISO 32000-1 AcroForm  |  pdftoolkit-core Engine) Tj
+495 32 Td (Page 1 of 1) Tj
+ET
+Q
+endstream
+endobj
+8 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Tx
+  /T (full_name)
+  /V ()
+  /Rect [ 45 665 290 689 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+>>
+endobj
+9 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Tx
+  /T (email)
+  /V ()
+  /Rect [ 305 665 550 689 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+>>
+endobj
+10 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Tx
+  /T (phone)
+  /V ()
+  /Rect [ 45 615 290 639 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+>>
+endobj
+11 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Tx
+  /T (birth_date)
+  /V ()
+  /Rect [ 305 615 430 639 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+  /AA <<
+    /F << /S /JavaScript /JS (AFDate_FormatEx("dd/mm/yyyy");) >>
+    /K << /S /JavaScript /JS (AFDate_KeystrokeEx("dd/mm/yyyy");) >>
+  >>
+>>
+endobj
+12 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Tx
+  /T (job_title)
+  /V ()
+  /Rect [ 45 520 290 544 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+>>
+endobj
+13 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Ch
+  /Ff 131072
+  /T (department)
+  /Opt [ (Engineering) (Finance) (Human Resources) (Legal) (Marketing) (Operations) ]
+  /V (Engineering)
+  /Rect [ 305 520 550 544 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9.5 Tf 0 0 0 rg)
+>>
+endobj
+14 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Ch
+  /Ff 0
+  /T (skills)
+  /Opt [ (Rust) (WebAssembly) (TypeScript) (Python) (Cloud Architecture) (DevOps & CI) ]
+  /V (Rust)
+  /Rect [ 45 425 290 490 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /S >>
+  /MK << /BC [ 0.8 0.85 0.9 ] /BG [ 0.98 0.99 1.0 ] >>
+  /DA (/Helv 9 Tf 0 0 0 rg)
+>>
+endobj
+15 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Btn
+  /Ff 65536
+  /T (photo)
+  /Rect [ 330 415 470 490 ]
+  /P 3 0 R
+  /F 4
+  /BS << /W 1 /S /D >>
+  /MK <<
+    /BC [ 0.7 0.7 0.7 ]
+    /BG [ 0.96 0.96 0.96 ]
+    /IF << /SW /B /S /P >>
+  >>
+>>
+endobj
+16 0 obj
+<<
+  /FT /Btn
+  /Ff 49152
+  /T (gender)
+  /V /Off
+  /Kids [ 17 0 R 18 0 R ]
+>>
+endobj
+17 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /Parent 16 0 R
+  /Rect [ 448 619 460 631 ]
+  /P 3 0 R
+  /F 4
+  /AS /Off
+  /AP <<
+    /N << /Off 28 0 R /Male 27 0 R >>
+  >>
+>>
+endobj
+18 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /Parent 16 0 R
+  /Rect [ 502 619 514 631 ]
+  /P 3 0 R
+  /F 4
+  /AS /Off
+  /AP <<
+    /N << /Off 30 0 R /Female 29 0 R >>
+  >>
+>>
+endobj
+19 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Btn
+  /T (agree_terms)
+  /V /Off
+  /AS /Off
+  /Rect [ 45 344 60 359 ]
+  /P 3 0 R
+  /F 4
+  /AP <<
+    /N << /Off 24 0 R /Yes 23 0 R >>
+  >>
+>>
+endobj
+20 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Btn
+  /T (newsletter)
+  /V /Off
+  /AS /Off
+  /Rect [ 45 318 60 333 ]
+  /P 3 0 R
+  /F 4
+  /AP <<
+    /N << /Off 26 0 R /Yes 25 0 R >>
+  >>
+>>
+endobj
+21 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Sig
+  /T (Signature_Applicant)
+  /Rect [ 45 155 285 260 ]
+  /P 3 0 R
+  /F 4
+  /Lock <<
+    /Type /SigFieldLock
+    /Action /Include
+    /Fields [ (full_name) (email) (phone) (birth_date) (job_title) (agree_terms) ]
+  >>
+>>
+endobj
+22 0 obj
+<<
+  /Type /Annot
+  /Subtype /Widget
+  /FT /Sig
+  /T (Signature_Manager)
+  /Rect [ 310 155 550 260 ]
+  /P 3 0 R
+  /F 4
+  /Lock <<
+    /Type /SigFieldLock
+    /Action /All
+  >>
+>>
+endobj
+23 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 15 15 ]
+  /Length 100
+>>
+stream
+q 1 1 1 rg 0.1 0.4 0.8 RG 0.75 w 0.5 0.5 14 14 re B 0.1 0.3 0.7 rg 1.5 w 3 7.5 m 6 3.5 l 12 12 l S Q
+endstream
+endobj
+24 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 15 15 ]
+  /Length 53
+>>
+stream
+q 1 1 1 rg 0.4 0.4 0.4 RG 0.75 w 0.5 0.5 14 14 re B Q
+endstream
+endobj
+25 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 15 15 ]
+  /Length 100
+>>
+stream
+q 1 1 1 rg 0.1 0.4 0.8 RG 0.75 w 0.5 0.5 14 14 re B 0.1 0.3 0.7 rg 1.5 w 3 7.5 m 6 3.5 l 12 12 l S Q
+endstream
+endobj
+26 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 15 15 ]
+  /Length 53
+>>
+stream
+q 1 1 1 rg 0.4 0.4 0.4 RG 0.75 w 0.5 0.5 14 14 re B Q
+endstream
+endobj
+27 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 12 12 ]
+  /Length 92
+>>
+stream
+q 0.8 0.8 0.8 rg 0.2 0.4 0.8 RG 0.5 w 6 6 5.5 0 360 arc B 0.1 0.3 0.7 rg 6 6 3 0 360 arc f Q
+endstream
+endobj
+28 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 12 12 ]
+  /Length 59
+>>
+stream
+q 0.8 0.8 0.8 rg 0.4 0.4 0.4 RG 0.5 w 6 6 5.5 0 360 arc B Q
+endstream
+endobj
+29 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 12 12 ]
+  /Length 92
+>>
+stream
+q 0.8 0.8 0.8 rg 0.2 0.4 0.8 RG 0.5 w 6 6 5.5 0 360 arc B 0.1 0.3 0.7 rg 6 6 3 0 360 arc f Q
+endstream
+endobj
+30 0 obj
+<<
+  /Type /XObject /Subtype /Form /BBox [ 0 0 12 12 ]
+  /Length 59
+>>
+stream
+q 0.8 0.8 0.8 rg 0.4 0.4 0.4 RG 0.5 w 6 6 5.5 0 360 arc B Q
+endstream
+endobj
+xref
+0 31
+0000000000 65535 f 
+0000000017 00000 n 
+0000000091 00000 n 
+0000000159 00000 n 
+0000000505 00000 n 
+0000000770 00000 n 
+0000000878 00000 n 
+0000000991 00000 n 
+0000004156 00000 n 
+0000004402 00000 n 
+0000004645 00000 n 
+0000004888 00000 n 
+0000005284 00000 n 
+0000005531 00000 n 
+0000005890 00000 n 
+0000006233 00000 n 
+0000006489 00000 n 
+0000006587 00000 n 
+0000006772 00000 n 
+0000006959 00000 n 
+0000007164 00000 n 
+0000007368 00000 n 
+0000007654 00000 n 
+0000007852 00000 n 
+0000008061 00000 n 
+0000008222 00000 n 
+0000008431 00000 n 
+0000008592 00000 n 
+0000008792 00000 n 
+0000008959 00000 n 
+0000009159 00000 n 
+trailer
+<<
+  /Size 31
+  /Root 1 0 R
+>>
+startxref
+9326
+%%EOF

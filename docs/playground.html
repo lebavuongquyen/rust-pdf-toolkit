@@ -54,14 +54,18 @@
       <!-- Template / File Selector Bar -->
       <div class="p-4 border-b border-slate-800 bg-slate-900/90 space-y-3">
         <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Select PDF Template</label>
-        <div class="grid grid-cols-2 gap-2">
-          <button id="btnSample1" class="text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium hover:bg-blue-900/50 transition text-left flex items-center space-x-2">
+        <div class="grid grid-cols-3 gap-2">
+          <button id="btnStandard" class="text-xs px-2.5 py-2 rounded-lg border border-blue-500 bg-blue-950/50 text-blue-300 font-semibold hover:bg-blue-900/60 transition text-left flex items-center space-x-1.5 shadow">
+            <span>⭐</span>
+            <span class="truncate">Standard Form (13 Fields)</span>
+          </button>
+          <button id="btnSample1" class="text-xs px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-1.5">
             <span>📄</span>
             <span class="truncate">Contact Form</span>
           </button>
-          <button id="btnSample2" class="text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2">
+          <button id="btnSample2" class="text-xs px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-1.5">
             <span>📑</span>
-            <span class="truncate">8-Field Template</span>
+            <span class="truncate">8-Field Form</span>
           </button>
         </div>
 
@@ -268,6 +272,18 @@
 
     // Sample Data Sets
     const SAMPLE_DATA = {
+      standard_form: {
+        "full_name": "Nguyễn Văn A",
+        "email": "nguyen.vana@enterprise.vn",
+        "phone": "+84 987 654 321",
+        "birth_date": "15/08/1995",
+        "job_title": "Senior Rust & Cloud Architect",
+        "department": "Engineering",
+        "skills": "Rust",
+        "gender": "Male",
+        "agree_terms": true,
+        "newsletter": false
+      },
       template: {
         "full_name": "Nguyễn Văn An",
         "email": "nguyenvanan@example.com",
@@ -295,8 +311,8 @@
         wasmBadge.className = 'flex items-center space-x-2 text-xs bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 px-3 py-1 rounded-full font-medium';
         wasmBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>WASM Engine Ready</span>';
         
-        // Load default template
-        await loadSampleTemplate('template.pdf', SAMPLE_DATA.template);
+        // Load default standard template with all 13 fields
+        await loadSampleTemplate('standard_form.pdf', SAMPLE_DATA.standard_form);
       } catch (err) {
         console.error('WASM Init failed:', err);
         wasmBadge.className = 'flex items-center space-x-2 text-xs bg-red-950/70 text-red-300 border border-red-700/60 px-3 py-1 rounded-full font-medium';
@@ -399,15 +415,29 @@
       await setPdfDocument(new Uint8Array(arrayBuffer), name, json);
     }
 
+    const updateButtonStyles = (activeBtn) => {
+      ['btnStandard', 'btnSample1', 'btnSample2'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (id === activeBtn) {
+          btn.className = 'text-xs px-2.5 py-2 rounded-lg border border-blue-500 bg-blue-950/60 text-blue-300 font-semibold transition text-left flex items-center space-x-1.5 shadow';
+        } else {
+          btn.className = 'text-xs px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-1.5';
+        }
+      });
+    };
+
+    document.getElementById('btnStandard').onclick = async () => {
+      updateButtonStyles('btnStandard');
+      await loadSampleTemplate('standard_form.pdf', SAMPLE_DATA.standard_form);
+    };
+
     document.getElementById('btnSample1').onclick = async () => {
-      document.getElementById('btnSample1').className = 'text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium transition text-left flex items-center space-x-2';
-      document.getElementById('btnSample2').className = 'text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2';
+      updateButtonStyles('btnSample1');
       await loadSampleTemplate('template.pdf', SAMPLE_DATA.template);
     };
 
     document.getElementById('btnSample2').onclick = async () => {
-      document.getElementById('btnSample2').className = 'text-xs px-3 py-2 rounded-lg border border-blue-500 bg-blue-950/40 text-blue-300 font-medium transition text-left flex items-center space-x-2';
-      document.getElementById('btnSample1').className = 'text-xs px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 font-medium hover:bg-slate-700/60 transition text-left flex items-center space-x-2';
+      updateButtonStyles('btnSample2');
       await loadSampleTemplate('template_8field.pdf', SAMPLE_DATA.template_8field);
     };
 
