@@ -575,6 +575,14 @@ struct SignArgs {
     #[arg(long)]
     position: Option<String>,
 
+    /// Visual signature image or stamp file path (PNG/JPEG) or Base64 data URI
+    #[arg(long)]
+    image: Option<String>,
+
+    /// Visual graphic layout inside signature box: "left", "right", "behind", "image-only", "text-only"
+    #[arg(long, default_value = "left")]
+    graphic_position: String,
+
     /// Flatten form fields before signing
     #[arg(long, default_value_t = false)]
     flatten: bool,
@@ -2481,6 +2489,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         margin_y: 36.0,
                     });
                 }
+            }
+
+            if args.image.is_some() || args.graphic_position.to_lowercase() != "left" {
+                let img_data = if let Some(path_or_b64) = &args.image {
+                    if path_or_b64.starts_with("data:image/") {
+                        Some(path_or_b64.clone())
+                    } else if let Ok(bytes) = fs::read(path_or_b64) {
+                        use base64::Engine;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        let mime = if path_or_b64.ends_with(".png") {
+                            "image/png"
+                        } else {
+                            "image/jpeg"
+                        };
+                        Some(format!("data:{mime};base64,{b64}"))
+                    } else {
+                        Some(path_or_b64.clone())
+                    }
+                } else {
+                    None
+                };
+
+                let pos: pdftoolkit_core::appearance::GraphicPosition = args
+                    .graphic_position
+                    .parse()
+                    .unwrap_or(pdftoolkit_core::appearance::GraphicPosition::Left);
+
+                let app = pdftoolkit_core::appearance::SignatureAppearanceOptions {
+                    image: img_data,
+                    position: pos,
+                    show_signer_name: true,
+                    signer_name: args.reason.clone(),
+                    show_date: true,
+                    reason: args.reason.clone(),
+                    location: args.location.clone(),
+                    ..Default::default()
+                };
+                builder = builder.appearance(app);
             }
 
             let signed_bytes = builder

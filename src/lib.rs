@@ -16,7 +16,7 @@ pub mod batch;
 #[cfg(not(target_arch = "wasm32"))]
 pub use batch::*;
 
-mod appearance;
+pub mod appearance;
 mod appearance_parser;
 mod appearance_renderer;
 mod field_strategy;

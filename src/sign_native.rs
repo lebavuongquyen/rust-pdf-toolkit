@@ -265,6 +265,20 @@ impl PdfSigner {
         self
     }
 
+    pub fn graphic_position(mut self, position: crate::appearance::GraphicPosition) -> Self {
+        let mut app = self.appearance.unwrap_or_default();
+        app.position = position;
+        self.appearance = Some(app);
+        self
+    }
+
+    pub fn signature_image(mut self, image: impl Into<String>) -> Self {
+        let mut app = self.appearance.unwrap_or_default();
+        app.image = Some(image.into());
+        self.appearance = Some(app);
+        self
+    }
+
     pub fn signer<S>(mut self, signer: S) -> Self
     where
         S: Signer + 'static,

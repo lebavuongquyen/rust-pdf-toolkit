@@ -397,3 +397,19 @@ pub fn flatten_pdf_wasm(template: &[u8]) -> Result<Vec<u8>, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("PDF save failed: {e}")))?;
     Ok(out)
 }
+
+#[wasm_bindgen]
+pub fn set_signature_appearance_wasm(
+    template: &[u8],
+    field_name: &str,
+    options_json: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let opts: crate::appearance::SignatureAppearanceOptions = if options_json.trim().is_empty() {
+        crate::appearance::SignatureAppearanceOptions::default()
+    } else {
+        serde_json::from_str(options_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid appearance options JSON: {e}")))?
+    };
+    crate::appearance::PdfAppearance::set_signature_appearance(template, field_name, &opts)
+        .map_err(|e| JsValue::from_str(&e))
+}

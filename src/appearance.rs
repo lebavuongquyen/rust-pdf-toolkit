@@ -2,13 +2,35 @@ use lopdf::Document;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "PascalCase")]
 pub enum GraphicPosition {
     #[default]
+    #[serde(alias = "left", alias = "LEFT")]
     Left,
+    #[serde(alias = "right", alias = "RIGHT")]
     Right,
+    #[serde(alias = "behind", alias = "BEHIND", alias = "background", alias = "Background")]
     Behind,
+    #[serde(alias = "image_only", alias = "image-only", alias = "IMAGE_ONLY", alias = "imageOnly", alias = "image", alias = "Image")]
     ImageOnly,
+    #[serde(alias = "text_only", alias = "text-only", alias = "TEXT_ONLY", alias = "textOnly", alias = "text", alias = "Text")]
     TextOnly,
+}
+
+impl std::str::FromStr for GraphicPosition {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().replace('-', "_").as_str() {
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            "behind" | "background" => Ok(Self::Behind),
+            "image_only" | "imageonly" | "image" => Ok(Self::ImageOnly),
+            "text_only" | "textonly" | "text" => Ok(Self::TextOnly),
+            other => Err(format!(
+                "Unknown graphic position '{other}'. Allowed: left, right, behind, image-only, text-only"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
