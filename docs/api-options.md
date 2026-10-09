@@ -144,6 +144,43 @@ This section documents all configuration structs used across `pdftoolkit-core`.
 
 ---
 
+## `SignatureAppearanceOptions` & `GraphicPosition`
+
+Visual appearance options applied to signature widget annotations during or before digital signing.
+
+### `GraphicPosition` Layout Modes
+| Value | Description |
+|---|---|
+| `Left` *(default)* | Image on the left, signature metadata text on the right |
+| `Right` | Text on the left, image on the right |
+| `Behind` | Image scales as a background watermark/seal, with text rendered cleanly on top (**for company red round seals / con dấu doanh nghiệp**) |
+| `ImageOnly` | Image scales to fill the entire signature bounding box, with no text rendered |
+| `TextOnly` | Only text is rendered, no image |
+
+### `SignatureAppearanceOptions`
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `image` | `Option<String>` | `None` | Image file path or Base64 data URI (`data:image/png;base64,...`) |
+| `position` | `GraphicPosition` | `GraphicPosition::Left` | Placement mode for the graphic element relative to text |
+| `image_width_ratio` | `Option<f64>` | `0.45` | Width ratio of image vs total box (for `Left`/`Right` layouts) |
+| `margin` | `Option<f64>` | `4.0` | Margin padding inside signature bounding box in points |
+| `font` | `SignatureFont` | `Helvetica` | Font family: `Helvetica`, `Times`, `Courier` |
+| `font_size` | `Option<f64>` | `auto` | Font size (pts). If `None`, dynamically calculated based on box height |
+| `bold` | `bool` | `false` | Bold styling for signature text |
+| `italic` | `bool` | `false` | Italic styling for signature text |
+| `align` | `TextAlign` | `TextAlign::Left` | Text alignment: `Left`, `Center`, `Right` |
+| `text_color` | `Option<[u8; 3]>` | `[0, 0, 0]` | RGB text color array `[r, g, b]` |
+| `show_signer_name` | `bool` | `false` | Whether to display signer name line |
+| `signer_name` | `Option<String>` | `None` | Signer name text |
+| `show_date` | `bool` | `false` | Whether to display signing date line |
+| `date` | `Option<String>` | `None` | Date text (or current timestamp) |
+| `show_reason` | `bool` | `false` | Whether to display signing reason |
+| `reason` | `Option<String>` | `None` | Signing reason text |
+| `show_location` | `bool` | `false` | Whether to display signing location |
+| `location` | `Option<String>` | `None` | Geographic location text |
+| `labels` | `Option<SignatureLabels>` | Vietnamese defaults | Custom localized prefixes (`signed_by`, `date`, `reason`, `location`) |
+
+
 ## `SignatureVerification` Model
 
 | Field | Type | Description |

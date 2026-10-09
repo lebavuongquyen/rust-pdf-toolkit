@@ -78,6 +78,9 @@ The WASM module exposes the following entry points:
   Dynamically adds a new invisible or visible signature field.
 - `remove_signature_field_wasm(template: Uint8Array, options_json: string): { bytes: Uint8Array, removedCount: number }`  
   Removes signature fields.
+- `set_signature_appearance_wasm(template: Uint8Array, field_name: string, options_json: string): Uint8Array`  
+  Renders visual signature appearance (stamp, handwritten signature, certificates, or text overlay with `GraphicPosition`: `left`, `right`, `behind`, `image-only`, `text-only`) directly inside the browser or Node.js.
+
 
 ### Embedded Image Extraction & Metadata
 - `extract_images_from_pdf_wasm(template: Uint8Array, options_json: string): Array<{ page: number, width: number, height: number, format: string, fileName: string, bytes: Uint8Array }>`  

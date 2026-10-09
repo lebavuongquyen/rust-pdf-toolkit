@@ -96,8 +96,36 @@ let output = PdfAppearance::set_signature_appearance(&template, "Signature_0", &
 std::fs::write("signature-appearance.pdf", output)?;
 ```
 
+### `GraphicPosition` Layout Modes
+
+The `position` field controls how visual elements (image, stamp, and certificate text) are arranged inside the signature box:
+
+| Variant | Layout Description | Ideal Use Case |
+|---|---|---|
+| **`GraphicPosition::Left`** *(default)* | Signature image or stamp on the **left**, certificate metadata text on the **right**. | Standard corporate and legal contracts. |
+| **`GraphicPosition::Right`** | Text on the left, graphic/signature on the right. | Right-aligned signature layouts. |
+| **`GraphicPosition::Behind`** | Image/stamp placed in the **background (as a seal/watermark)**, with digital certificate text overlaid on top. | **Company round seal (con dấu đỏ) in background + digital signature text on top.** |
+| **`GraphicPosition::ImageOnly`** | Image scales to fill the entire signature rectangle (no text lines rendered). | Scanned handwritten signatures or pre-rendered stamp graphics. |
+| **`GraphicPosition::TextOnly`** | Only cryptographic text lines rendered (no image). | Minimalist digital signatures. |
+
+### Fast Builder Methods on `PdfSigner`
+
+You can also configure visual appearance directly on `PdfSigner` using chaining methods:
+
+```rust
+let signed = PdfSigner::new()
+    .field("Signature_Manager")
+    .signer(signer)
+    .reason("Phê duyệt hồ sơ")
+    .location("Hồ Chí Minh")
+    .signature_image("data:image/png;base64,iVBORw0KGgo...") // or file path
+    .graphic_position(GraphicPosition::Behind)              // Seal behind text
+    .flatten(true)
+    .sign(&pdf_bytes)?;
+```
+
 > [!NOTE]
-> `PdfAppearance` modifies visual form XObjects and does not create cryptographic signatures. To cryptographically sign with visual appearance, pass `SignatureAppearanceOptions` directly into `PdfSigner`.
+> `PdfAppearance` modifies visual form XObjects and does not create cryptographic signatures. To cryptographically sign with visual appearance, pass `SignatureAppearanceOptions` or use `.signature_image(...)` and `.graphic_position(...)` directly on `PdfSigner`.
 
 ---
 

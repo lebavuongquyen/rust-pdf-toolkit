@@ -208,18 +208,58 @@ pdftoolkit sign -i document.pdf -o signed.pdf \
     --reason "Phê duyệt hợp đồng kinh tế" \
     --location "Hà Nội, Việt Nam"
 
-# Auto-create signature field on the fly if it does not already exist:
+# Auto-create signature field with company stamp/seal behind certificate text:
+pdftoolkit sign -i document.pdf -o signed.pdf \
+    --field "CompanySealSig" \
+    --auto-create-field \
+    --position bottom-right \
+    --cert company.cert.der \
+    --key company.key.der \
+    --image "./assets/company_seal.png" \
+    --graphic-position behind \
+    --reason "Phê duyệt hợp đồng kinh tế" \
+    --location "Hà Nội, Việt Nam"
+
+# Auto-create signature field on the fly with handwritten signature image on left:
 pdftoolkit sign -i document.pdf -o signed.pdf \
     --field "AutoSig1" \
     --auto-create-field \
     --position bottom-right \
     --cert signer.cert.der \
     --key signer.key.der \
+    --image "./assets/handwritten_sig.png" \
+    --graphic-position left \
     --reason "Đã duyệt và ký số điện tử"
+
+# Image-only signature appearance (stamp without text overlay):
+pdftoolkit sign -i document.pdf -o signed.pdf \
+    --field "StampOnly" \
+    --cert signer.cert.der \
+    --key signer.key.der \
+    --image "./assets/stamp.png" \
+    --graphic-position image-only
 
 # Cryptographically verify all digital signatures in a PDF:
 pdftoolkit verify -i signed.pdf --json
 ```
+
+### Sign CLI Flags Reference
+| Flag | Description | Values / Examples |
+|---|---|---|
+| `-i, --input <PATH>` | Input PDF document path | `contract.pdf` |
+| `-o, --output <PATH>` | Output signed PDF path | `signed.pdf` |
+| `--field <NAME>` | Target signature field name | `"Signature1"`, `"AutoSig1"` |
+| `--cert <PATH>` | Signer X.509 certificate (DER / PEM) | `signer.cert.der` |
+| `--key <PATH>` | Signer private key (DER / PKCS#8) | `signer.key.der` |
+| `--image <PATH_OR_BASE64>` | Visual signature image or company stamp | File path or Base64 string |
+| `--graphic-position <POS>` | Visual appearance layout position | `left` (default), `right`, `behind`, `image-only`, `text-only` |
+| `--auto-create-field` | Create AcroForm field automatically if missing | Flag |
+| `--position <POS>` | Auto-created field position preset | `bottom-right`, `bottom-left`, `top-right`, `top-left`, `center` |
+| `--page <NUM>` | Target page for auto-created field | 1-based page number |
+| `--reason <TEXT>` | Signing reason annotation | `"Phê duyệt hợp đồng"` |
+| `--location <TEXT>` | Geographic signing location | `"Hà Nội, Việt Nam"` |
+| `--contact-info <TEXT>` | Signer contact information | `"signer@company.vn"` |
+
 
 ---
 
