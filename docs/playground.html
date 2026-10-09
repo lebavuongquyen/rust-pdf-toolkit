@@ -96,15 +96,21 @@
           <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
             <div class="flex items-center space-x-2">
               <input type="checkbox" id="chkFlatten" class="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0">
-              <label for="chkFlatten" class="text-xs text-slate-300 cursor-pointer">Flatten fields into permanent graphics</label>
+              <label for="chkFlatten" class="text-xs text-slate-300 cursor-pointer">Flatten form fields into static graphics</label>
             </div>
-            <span class="text-[11px] text-slate-500">Non-editable output</span>
+            <span class="text-[10px] text-amber-400 font-mono">Signatures preserved</span>
           </div>
 
-          <button id="btnExecuteFill" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium text-xs rounded-lg transition shadow-md flex items-center justify-center space-x-2">
-            <span>⚡</span>
-            <span>Execute Form Filling (WASM)</span>
-          </button>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btnExecuteFill" class="py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium text-xs rounded-lg transition shadow-md flex items-center justify-center space-x-1.5">
+              <span>⚡</span>
+              <span>Execute Fill (WASM)</span>
+            </button>
+            <button id="btnExecuteStandaloneFlatten" class="py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-medium text-xs rounded-lg transition border border-slate-700 shadow-md flex items-center justify-center space-x-1.5" title="Permanently flatten all form fields (except signatures) without modifying filled values">
+              <span>🔒</span>
+              <span>Flatten All Fields</span>
+            </button>
+          </div>
         </div>
 
         <!-- TAB 2: WATERMARK -->
@@ -238,6 +244,7 @@
       get_form_fields_result,
       fill_pdf_bytes,
       fill_pdf_result,
+      flatten_pdf_wasm,
       validate_pdf_result,
       apply_watermark_wasm,
       apply_page_numbering_wasm,
@@ -323,24 +330,50 @@
     }
 
     // 3. Inspect fields with WASM
-    function inspectFields(bytes, sampleJson = null) {
+    function inspectFields(bytes, sampleJson = null, updateJson = true) {
       try {
         const rawJson = get_form_fields_result(bytes);
         detectedFields = JSON.parse(rawJson);
-        fieldsCount.textContent = detectedFields.length;
+
+        const onlySignatures = detectedFields.length > 0 && detectedFields.every(f => f.field_type === 'Signature');
+        if (onlySignatures) {
+          fieldsCount.textContent = `${detectedFields.length} (Signatures Only)`;
+        } else {
+          fieldsCount.textContent = detectedFields.length;
+        }
 
         // Render fields list
         fieldsListContainer.innerHTML = '';
         if (detectedFields.length === 0) {
-          fieldsListContainer.innerHTML = '<p class="text-xs text-slate-500 italic p-3">No interactive AcroForm fields found in this document.</p>';
+          fieldsListContainer.innerHTML = '<p class="text-xs text-slate-500 italic p-3">No interactive AcroForm fields found in this document (All fields flattened).</p>';
         } else {
+          if (onlySignatures) {
+            const notice = document.createElement('div');
+            notice.className = 'p-2.5 mb-2 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-xs text-emerald-300 flex items-center space-x-2';
+            notice.innerHTML = `<span>🔒</span><span>All form fields flattened permanently. Digital signature fields preserved for signing.</span>`;
+            fieldsListContainer.appendChild(notice);
+          }
+
           detectedFields.forEach(f => {
             const item = document.createElement('div');
             item.className = 'bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 flex items-center justify-between text-xs';
+            let statusBadge = '';
+            if (f.field_type === 'Signature') {
+              if (f.signed) {
+                statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-900/60 text-purple-200 border border-purple-700 ml-1">Signed (ReadOnly)</span>';
+              } else {
+                statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-indigo-950 text-indigo-300 border border-indigo-800 ml-1">Unsigned (Signable)</span>';
+              }
+            } else if (f.read_only) {
+              statusBadge = '<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-400 ml-1">ReadOnly</span>';
+            }
             item.innerHTML = `
               <div class="truncate mr-2">
-                <span class="font-medium text-slate-200">${escapeHtml(f.name)}</span>
-                <span class="text-[10px] text-slate-500 block">Page ${f.page || 1}</span>
+                <div class="flex items-center space-x-1 truncate">
+                  <span class="font-medium text-slate-200 truncate">${escapeHtml(f.name)}</span>
+                  ${statusBadge}
+                </div>
+                <span class="text-[10px] text-slate-500 block">Page ${f.page || 1}${f.value ? ' • ' + escapeHtml(String(f.value)) : ''}</span>
               </div>
               <span class="px-2 py-0.5 rounded text-[10px] font-mono font-medium ${getTypeBadge(f.field_type)}">${f.field_type}</span>
             `;
@@ -349,17 +382,19 @@
         }
 
         // Set JSON Payload
-        if (sampleJson) {
-          jsonEditor.value = JSON.stringify(sampleJson, null, 2);
-        } else {
-          // Generate scaffold from detected fields
-          const scaffold = {};
-          detectedFields.forEach(f => {
-            if (f.field_type === 'Checkbox') scaffold[f.name] = true;
-            else if (f.field_type === 'Signature') return; // Exclude sig fields
-            else scaffold[f.name] = f.value || "Sample Value";
-          });
-          jsonEditor.value = JSON.stringify(scaffold, null, 2);
+        if (updateJson) {
+          if (sampleJson) {
+            jsonEditor.value = JSON.stringify(sampleJson, null, 2);
+          } else {
+            // Generate scaffold from detected fields
+            const scaffold = {};
+            detectedFields.forEach(f => {
+              if (f.field_type === 'Checkbox') scaffold[f.name] = true;
+              else if (f.field_type === 'Signature') return; // Exclude sig fields
+              else scaffold[f.name] = f.value || "Sample Value";
+            });
+            jsonEditor.value = JSON.stringify(scaffold, null, 2);
+          }
         }
       } catch (err) {
         console.error('Field inspection error:', err);
@@ -434,14 +469,35 @@
 
         currentPdfBytes = filledBytes;
         renderPdfInPreview(filledBytes);
+        inspectFields(filledBytes, null, false);
 
         const duration = (t1 - t0).toFixed(2);
-        execStats.textContent = `⚡ Filled successfully in ${duration}ms (${filledBytes.length} bytes)${flatten ? ' [Flattened]' : ' [Interactive]'}`;
+        execStats.textContent = `⚡ Filled successfully in ${duration}ms (${filledBytes.length} bytes)${flatten ? ' [Flattened - Signatures Preserved]' : ' [Interactive Form]'}`;
 
         // Show report
         reportJsonOutput.textContent = JSON.stringify(JSON.parse(reportJson), null, 2);
       } catch (err) {
         alert('Form Fill Error: ' + err.message);
+        console.error(err);
+      }
+    };
+
+    // 6b. Action: Standalone Flatten (All fields flattened except signatures)
+    document.getElementById('btnExecuteStandaloneFlatten').onclick = async () => {
+      if (!currentPdfBytes) return;
+      try {
+        const t0 = performance.now();
+        const flattenedBytes = flatten_pdf_wasm(currentPdfBytes);
+        const t1 = performance.now();
+
+        currentPdfBytes = flattenedBytes;
+        renderPdfInPreview(flattenedBytes);
+        inspectFields(flattenedBytes, null, false);
+
+        const duration = (t1 - t0).toFixed(2);
+        execStats.textContent = `🔒 All form fields flattened into static graphics in ${duration}ms (${flattenedBytes.length} bytes). Signatures preserved.`;
+      } catch (err) {
+        alert('Flatten Error: ' + err.message);
         console.error(err);
       }
     };

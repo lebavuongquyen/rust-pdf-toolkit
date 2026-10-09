@@ -1768,7 +1768,14 @@ pub fn flatten_form_fields(
 
     for def in definitions {
         if def.field_type == b"Sig" {
-            let is_signed = def.field.get(b"V").is_ok();
+            let is_signed = get_signature_dict(doc, def.id, &def.field).is_some()
+                || def.field.get(b"V").is_ok()
+                || widget_ids(doc, def.id, &def.field).iter().any(|&w| {
+                    doc.get_object(w)
+                        .and_then(|o| o.as_dict())
+                        .map(|d| d.get(b"V").is_ok())
+                        .unwrap_or(false)
+                });
             if is_signed {
                 fields_to_keep.insert(def.id);
                 for w in widget_ids(doc, def.id, &def.field) {
@@ -1780,6 +1787,12 @@ pub fn flatten_form_fields(
                             .and_then(|x| x.as_i64().ok())
                             .unwrap_or(0);
                         w_dict.set("F", Object::Integer(f | 1 | 64));
+                        let ff = w_dict
+                            .get(b"Ff")
+                            .ok()
+                            .and_then(|x| x.as_i64().ok())
+                            .unwrap_or(0);
+                        w_dict.set("Ff", Object::Integer(ff | 1));
                     }
                 }
                 if let Ok(f_dict) = doc.get_object_mut(def.id).and_then(|o| o.as_dict_mut()) {

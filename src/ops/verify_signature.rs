@@ -25,20 +25,31 @@ pub fn verify_pdf_signatures(pdf_bytes: &[u8]) -> Result<Vec<SignatureVerificati
 
     let fields = crate::collect_fields(&doc);
 
-    for (field_name, (_id, field, ft)) in fields {
+    for (field_name, (id, field, ft)) in fields {
         if ft.as_slice() != b"Sig" {
             continue;
         }
 
-        let sig_dict = match field.get(b"V").and_then(|v| {
-            if let Ok(id) = v.as_reference() {
-                doc.get_object(id).and_then(|o| o.as_dict())
-            } else {
-                v.as_dict()
-            }
-        }) {
-            Ok(d) => d,
-            Err(_) => continue, // Unsigned signature field
+        let sig_dict = match field
+            .get(b"V")
+            .ok()
+            .or_else(|| {
+                crate::widget_ids(&doc, id, &field).iter().find_map(|wid| {
+                    doc.get_object(*wid)
+                        .ok()
+                        .and_then(|o| o.as_dict().ok())
+                        .and_then(|d| d.get(b"V").ok())
+                })
+            })
+            .and_then(|v| {
+                if let Ok(target_id) = v.as_reference() {
+                    doc.get_object(target_id).and_then(|o| o.as_dict()).ok()
+                } else {
+                    v.as_dict().ok()
+                }
+            }) {
+            Some(d) => d,
+            None => continue, // Unsigned signature field
         };
 
         let mut item = SignatureVerification {

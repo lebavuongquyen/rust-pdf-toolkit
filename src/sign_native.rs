@@ -1,5 +1,5 @@
 use ::time::{OffsetDateTime, format_description::parse_borrowed};
-use lopdf::{Dictionary, Document, IncrementalDocument, Object, ObjectId, StringFormat};
+use lopdf::{Dictionary, Document, IncrementalDocument, Object, StringFormat};
 use p384::ecdsa::SigningKey as EcdsaSigningKey;
 use rsa::RsaPrivateKey;
 use rsa::pkcs1v15::SigningKey;
@@ -441,7 +441,12 @@ impl PdfSigner {
 
         let widgets = crate::widget_ids(&doc, *field_id, field);
 
+        let max_base = doc.objects.keys().map(|(id, _)| *id).max().unwrap_or(0);
+        let prev_startxref = find_last_startxref(&base_pdf);
         let mut incremental = IncrementalDocument::create_from(base_pdf, doc);
+        if let Some(prev) = prev_startxref {
+            incremental.new_document.trailer.set("Prev", Object::Integer(prev));
+        }
         incremental
             .opt_clone_object_to_new_document(*field_id)
             .map_err(|e| SignError::SigningFailed(e.to_string()))?;
@@ -452,7 +457,14 @@ impl PdfSigner {
             }
         }
 
-        let signature_id = next_object_id(&incremental.new_document);
+        let signature_id = {
+            let max_new = incremental.new_document.objects.keys().map(|(id, _)| *id).max().unwrap_or(0);
+            (max_base.max(max_new) + 1, 0)
+        };
+        incremental
+            .new_document
+            .trailer
+            .set("Size", Object::Integer((signature_id.0 + 1) as i64));
         let contents_len = self.placeholder_size;
         let placeholder = vec![0xAA; contents_len];
 
@@ -487,6 +499,7 @@ impl PdfSigner {
             .new_document
             .objects
             .insert(signature_id, Object::Dictionary(signature));
+        incremental.new_document.max_id = signature_id.0;
 
         let field_object = incremental
             .new_document
@@ -517,7 +530,14 @@ impl PdfSigner {
                         .ok()
                         .and_then(|x| x.as_i64().ok())
                         .unwrap_or(0);
+                    w_dict.set("V", Object::Reference(signature_id));
                     w_dict.set("F", Object::Integer(f | 1 | 64));
+                    let w_ff = w_dict
+                        .get(b"Ff")
+                        .ok()
+                        .and_then(|x| x.as_i64().ok())
+                        .unwrap_or(0);
+                    w_dict.set("Ff", Object::Integer(w_ff | 1));
                 }
             }
         }
@@ -657,11 +677,6 @@ fn parse_certificate(data: &[u8]) -> Result<(), SignError> {
         ));
     }
     Ok(())
-}
-
-fn next_object_id(doc: &Document) -> ObjectId {
-    let max_id = doc.objects.keys().map(|(id, _)| *id).max().unwrap_or(0);
-    (max_id + 1, 0)
 }
 
 fn pdf_text(value: &str) -> Object {
@@ -881,3 +896,22 @@ fn build_cms(
         der(0xA0, &signed_data),
     ]))
 }
+
+fn find_last_startxref(bytes: &[u8]) -> Option<i64> {
+    let window = if bytes.len() > 1024 {
+        &bytes[bytes.len() - 1024..]
+    } else {
+        bytes
+    };
+    let marker = b"startxref";
+    let pos = window.windows(marker.len()).rposition(|w| w == marker)?;
+    let after = &window[pos + marker.len()..];
+    let num_str: String = after
+        .iter()
+        .skip_while(|b| b.is_ascii_whitespace())
+        .take_while(|b| b.is_ascii_digit())
+        .map(|b| *b as char)
+        .collect();
+    num_str.parse::<i64>().ok()
+}
+
