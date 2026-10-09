@@ -1,5 +1,3 @@
-/* @ts-self-types="./pdftoolkit_core.d.ts" */
-
 /**
  * @param {Uint8Array} template
  * @param {string} options_json

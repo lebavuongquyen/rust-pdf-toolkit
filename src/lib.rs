@@ -84,7 +84,7 @@ impl FillOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldStatus {
     Filled,
     Missing,
@@ -93,7 +93,7 @@ pub enum FieldStatus {
     Failed,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldResult {
     pub field: String,
     pub status: FieldStatus,
@@ -205,6 +205,26 @@ fn field_flags(dict: &Dictionary) -> i64 {
         .ok()
         .and_then(|x| x.as_i64().ok())
         .unwrap_or(0)
+}
+
+pub(crate) fn inherited_field_flags(doc: &Document, dict: &Dictionary) -> i64 {
+    if let Ok(ff) = dict.get(b"Ff").and_then(|x| x.as_i64()) {
+        return ff;
+    }
+    let mut current = dict.get(b"Parent").ok().and_then(|x| x.as_reference().ok());
+    while let Some(parent_id) = current {
+        let Ok(parent) = doc.get_object(parent_id).and_then(|x| x.as_dict()) else {
+            break;
+        };
+        if let Ok(ff) = parent.get(b"Ff").and_then(|x| x.as_i64()) {
+            return ff;
+        }
+        current = parent
+            .get(b"Parent")
+            .ok()
+            .and_then(|x| x.as_reference().ok());
+    }
+    0
 }
 
 fn is_read_only(dict: &Dictionary) -> bool {
@@ -410,6 +430,8 @@ fn set_choice(
     value: &Value,
 ) -> Result<(), String> {
     let options = choice_options(field);
+    let flags = inherited_field_flags(doc, field) as u32;
+    let is_editable = flags & (1 << 18) != 0;
     let values: Vec<String> = if let Some(s) = value.as_str() {
         vec![s.to_string()]
     } else if let Some(a) = value.as_array() {
@@ -429,17 +451,20 @@ fn set_choice(
             exports.push(value.clone());
             continue;
         }
-        let Some((index, pair)) = options
+        if let Some((index, pair)) = options
             .iter()
             .enumerate()
             .find(|(_, pair)| pair.iter().any(|x| x == value))
-        else {
+        {
+            indexes.push(index);
+            exports.push(pair[0].clone());
+        } else if is_editable {
+            exports.push(value.clone());
+        } else {
             return Err(format!(
                 "Choice value '{value}' is not present in field options"
             ));
-        };
-        indexes.push(index);
-        exports.push(pair[0].clone());
+        }
     }
     let field = doc
         .get_object_mut(field_id)
@@ -673,6 +698,12 @@ pub struct FormField {
     pub date_format: Option<String>,
     #[serde(default)]
     pub signature: Option<SignatureInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_select: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editable: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_option: Option<bool>,
 }
 
 fn field_type_name(
@@ -684,7 +715,7 @@ fn field_type_name(
     match ft {
         b"Sig" => FormFieldType::Signature,
         b"Btn" => {
-            let flags = field_flags(field) as u32;
+            let flags = inherited_field_flags(doc, field) as u32;
             if field_has_image_appearance(doc, field_id, field) {
                 FormFieldType::Image
             } else if flags & (1 << 16) != 0 {
@@ -696,7 +727,7 @@ fn field_type_name(
             }
         }
         b"Ch" => {
-            let flags = field_flags(field) as u32;
+            let flags = inherited_field_flags(doc, field) as u32;
             if flags & (1 << 17) != 0 {
                 FormFieldType::ComboBox
             } else {
@@ -1406,7 +1437,7 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
         .iter()
         .map(|definition| {
             let locations = field_locations(doc, definition.id, &definition.field);
-            let flags = field_flags(&definition.field) as u32;
+            let flags = inherited_field_flags(doc, &definition.field) as u32;
             let read_only = flags & 1 != 0;
             let first = locations.first();
             let field_type = field_type_name(
@@ -1440,6 +1471,18 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
             } else {
                 None
             };
+            let is_choice = definition.field_type == b"Ch";
+            let multi_select = if is_choice {
+                Some(flags & (1 << 21) != 0)
+            } else {
+                None
+            };
+            let editable = if is_choice {
+                Some(flags & (1 << 18) != 0)
+            } else {
+                None
+            };
+            let custom_option = editable;
             FormField {
                 id: object_id_string(definition.id),
                 name: definition.name.clone(),
@@ -1487,6 +1530,9 @@ fn collect_form_fields(doc: &Document) -> Vec<FormField> {
                 },
                 date_format,
                 signature,
+                multi_select,
+                editable,
+                custom_option,
             }
         })
         .collect();

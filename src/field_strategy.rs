@@ -133,12 +133,14 @@ impl FieldStrategy for ChoiceFieldStrategy {
     }
     fn validate(
         &self,
-        _: &Document,
+        doc: &Document,
         _: ObjectId,
         field: &Dictionary,
         value: &Value,
     ) -> Result<(), String> {
         let options = super::choice_options(field);
+        let flags = super::inherited_field_flags(doc, field) as u32;
+        let is_editable = flags & (1 << 18) != 0;
         let values: Vec<String> = if let Some(s) = value.as_str() {
             vec![s.to_string()]
         } else if let Some(a) = value.as_array() {
@@ -151,7 +153,8 @@ impl FieldStrategy for ChoiceFieldStrategy {
         if values.is_empty() {
             return Err("Choice value cannot be empty".into());
         }
-        if options.is_empty()
+        if is_editable
+            || options.is_empty()
             || values.iter().all(|v| {
                 options
                     .iter()

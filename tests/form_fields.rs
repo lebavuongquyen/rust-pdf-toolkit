@@ -426,3 +426,169 @@ fn test_fill_pdf_piece_info_insertion_and_extraction() {
     assert_eq!(ext_flat["FlattenMeta"]["status"], "archived");
     assert_eq!(ext_flat["FlattenMeta"]["pages"], 1);
 }
+
+#[test]
+fn test_template_8field_choice_fields_discovery() {
+    let template = fs::read("reference/template_8field.pdf").expect("template_8field");
+    let fields = get_form_fields(&template).expect("fields");
+
+    let combo = fields.iter().find(|f| f.name == "Combo Box0").expect("combo");
+    assert_eq!(combo.field_type, FormFieldType::ComboBox);
+    assert!(combo.multi_select.is_some());
+    assert!(combo.editable.is_some());
+    assert_eq!(combo.editable, combo.custom_option);
+
+    let list = fields.iter().find(|f| f.name == "List Box0").expect("list");
+    assert_eq!(list.field_type, FormFieldType::ListBox);
+    assert!(list.multi_select.is_some());
+    assert!(list.editable.is_some());
+    assert_eq!(list.editable, list.custom_option);
+
+    // Non-choice field has None
+    let text = fields.iter().find(|f| f.name == "Text Field0").expect("text");
+    assert_eq!(text.multi_select, None);
+    assert_eq!(text.editable, None);
+    assert_eq!(text.custom_option, None);
+}
+
+#[test]
+fn test_choice_fields_multi_select_and_custom_options() {
+    use lopdf::{Document, Object, Dictionary};
+
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page_id = doc.new_object_id();
+
+    // 1. Multi-select ListBox with custom option allowed (Bit 19 Edit: 1<<18, Bit 22 MultiSelect: 1<<21)
+    let list_flags = (1 << 18) | (1 << 21);
+    let mut list_dict = Dictionary::new();
+    list_dict.set("Type", Object::Name(b"Annot".to_vec()));
+    list_dict.set("Subtype", Object::Name(b"Widget".to_vec()));
+    list_dict.set("FT", Object::Name(b"Ch".to_vec()));
+    list_dict.set("T", Object::string_literal("multi_list"));
+    list_dict.set("Ff", Object::Integer(list_flags as i64));
+    list_dict.set("Opt", Object::Array(vec![
+        Object::string_literal("A"),
+        Object::string_literal("B"),
+        Object::string_literal("C"),
+    ]));
+    list_dict.set("Rect", Object::Array(vec![10.into(), 10.into(), 100.into(), 100.into()]));
+    let list_id = doc.add_object(list_dict);
+
+    // 2. Single-select ComboBox with editable / custom option allowed (Bit 18 Combo: 1<<17, Bit 19 Edit: 1<<18)
+    let combo_flags = (1 << 17) | (1 << 18);
+    let mut combo_dict = Dictionary::new();
+    combo_dict.set("Type", Object::Name(b"Annot".to_vec()));
+    combo_dict.set("Subtype", Object::Name(b"Widget".to_vec()));
+    combo_dict.set("FT", Object::Name(b"Ch".to_vec()));
+    combo_dict.set("T", Object::string_literal("editable_combo"));
+    combo_dict.set("Ff", Object::Integer(combo_flags as i64));
+    combo_dict.set("Opt", Object::Array(vec![
+        Object::string_literal("X"),
+        Object::string_literal("Y"),
+    ]));
+    combo_dict.set("Rect", Object::Array(vec![10.into(), 110.into(), 100.into(), 150.into()]));
+    let combo_id = doc.add_object(combo_dict);
+
+    // 3. Regular non-editable single-select ComboBox (Bit 18 Combo: 1<<17)
+    let standard_combo_flags = 1 << 17;
+    let mut s_combo_dict = Dictionary::new();
+    s_combo_dict.set("Type", Object::Name(b"Annot".to_vec()));
+    s_combo_dict.set("Subtype", Object::Name(b"Widget".to_vec()));
+    s_combo_dict.set("FT", Object::Name(b"Ch".to_vec()));
+    s_combo_dict.set("T", Object::string_literal("standard_combo"));
+    s_combo_dict.set("Ff", Object::Integer(standard_combo_flags as i64));
+    s_combo_dict.set("Opt", Object::Array(vec![
+        Object::string_literal("Opt1"),
+        Object::string_literal("Opt2"),
+    ]));
+    s_combo_dict.set("Rect", Object::Array(vec![10.into(), 160.into(), 100.into(), 200.into()]));
+    let s_combo_id = doc.add_object(s_combo_dict);
+
+    // Page
+    let mut page_dict = Dictionary::new();
+    page_dict.set("Type", Object::Name(b"Page".to_vec()));
+    page_dict.set("Parent", Object::Reference(pages_id));
+    page_dict.set("MediaBox", Object::Array(vec![0.into(), 0.into(), 600.into(), 800.into()]));
+    page_dict.set("Annots", Object::Array(vec![
+        Object::Reference(list_id),
+        Object::Reference(combo_id),
+        Object::Reference(s_combo_id),
+    ]));
+    doc.objects.insert(page_id, Object::Dictionary(page_dict));
+
+    // Pages
+    let mut pages_dict = Dictionary::new();
+    pages_dict.set("Type", Object::Name(b"Pages".to_vec()));
+    pages_dict.set("Kids", Object::Array(vec![Object::Reference(page_id)]));
+    pages_dict.set("Count", Object::Integer(1));
+    doc.objects.insert(pages_id, Object::Dictionary(pages_dict));
+
+    // Catalog & AcroForm
+    let acroform_id = doc.new_object_id();
+    let mut acroform_dict = Dictionary::new();
+    acroform_dict.set("Fields", Object::Array(vec![
+        Object::Reference(list_id),
+        Object::Reference(combo_id),
+        Object::Reference(s_combo_id),
+    ]));
+    doc.objects.insert(acroform_id, Object::Dictionary(acroform_dict));
+
+    let catalog_id = doc.new_object_id();
+    let mut catalog_dict = Dictionary::new();
+    catalog_dict.set("Type", Object::Name(b"Catalog".to_vec()));
+    catalog_dict.set("Pages", Object::Reference(pages_id));
+    catalog_dict.set("AcroForm", Object::Reference(acroform_id));
+    doc.objects.insert(catalog_id, Object::Dictionary(catalog_dict));
+    doc.trailer.set("Root", Object::Reference(catalog_id));
+
+    let mut pdf_bytes = Vec::new();
+    doc.save_to(&mut pdf_bytes).expect("save pdf");
+
+    // Discover fields
+    let fields = get_form_fields(&pdf_bytes).expect("get_form_fields");
+    assert_eq!(fields.len(), 3);
+
+    // Verify multi_list
+    let list_f = fields.iter().find(|f| f.name == "multi_list").unwrap();
+    assert_eq!(list_f.field_type, FormFieldType::ListBox);
+    assert_eq!(list_f.multi_select, Some(true));
+    assert_eq!(list_f.editable, Some(true));
+    assert_eq!(list_f.custom_option, Some(true));
+
+    // Verify editable_combo
+    let combo_f = fields.iter().find(|f| f.name == "editable_combo").unwrap();
+    assert_eq!(combo_f.field_type, FormFieldType::ComboBox);
+    assert_eq!(combo_f.multi_select, Some(false));
+    assert_eq!(combo_f.editable, Some(true));
+    assert_eq!(combo_f.custom_option, Some(true));
+
+    // Verify standard_combo
+    let s_combo_f = fields.iter().find(|f| f.name == "standard_combo").unwrap();
+    assert_eq!(s_combo_f.field_type, FormFieldType::ComboBox);
+    assert_eq!(s_combo_f.multi_select, Some(false));
+    assert_eq!(s_combo_f.editable, Some(false));
+    assert_eq!(s_combo_f.custom_option, Some(false));
+
+    // Fill test: custom option allowed in editable fields
+    let fill_data = serde_json::json!({
+        "editable_combo": "Custom Value Z",
+        "multi_list": ["A", "Custom Value 123"],
+    });
+    let (filled_bytes, report) = pdffiller_core::fill_pdf(&pdf_bytes, &fill_data.to_string(), None).expect("fill custom options");
+    assert_eq!(report.filled_count(), 2);
+
+    let filled_fields = get_form_fields(&filled_bytes).expect("get filled fields");
+    let filled_combo = filled_fields.iter().find(|f| f.name == "editable_combo").unwrap();
+    assert_eq!(filled_combo.value, Some(serde_json::Value::String("Custom Value Z".into())));
+
+    // Fill test: standard_combo marks invalid when providing non-existent option
+    let invalid_fill = serde_json::json!({
+        "standard_combo": "Not In List",
+    });
+    let (_pdf, report_invalid) = pdffiller_core::fill_pdf(&pdf_bytes, &invalid_fill.to_string(), None).expect("fill returns report");
+    assert_eq!(report_invalid.filled_count(), 0);
+    assert_eq!(report_invalid.fields.len(), 1);
+    assert_eq!(report_invalid.fields[0].status, pdffiller_core::FieldStatus::Invalid);
+    assert_eq!(report_invalid.fields[0].reason.as_deref(), Some("Choice option not found"));
+}
